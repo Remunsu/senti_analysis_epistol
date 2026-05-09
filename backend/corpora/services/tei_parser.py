@@ -7,7 +7,6 @@ from corpora.models import Volume, Work, Token
 
 
 NS = {"tei": "http://www.tei-c.org/ns/1.0"}
-XML_ID = "{http://www.w3.org/XML/1998/namespace}id"
 
 
 def clean_text(value: str) -> str:
@@ -33,10 +32,6 @@ def first_attr(node, xpath: str) -> str:
 
 
 def parse_xml_file(path: str):
-    """
-    В ваших файлах declaration говорит UTF-16, но фактически текст читается как UTF-8.
-    Поэтому читаем как UTF-8 и исправляем encoding declaration.
-    """
     text = Path(path).read_text(encoding="utf-8")
     text = re.sub(r'encoding="[^"]+"', 'encoding="UTF-8"', text, count=1)
 
@@ -45,32 +40,16 @@ def parse_xml_file(path: str):
 
 
 def extract_volume_data(root) -> dict:
-    title = first_text(root, "./tei:teiHeader//tei:titleStmt/tei:title")
-
-    number = None
-    match = re.search(r"Т\.\s*(\d+)", title)
-    if match:
-        number = int(match.group(1))
-
-    author = "Ломоносов М.В."
-    if "." in title:
-        possible_author = title.split(". Полное", 1)[0].strip()
-        if possible_author:
-            author = possible_author
-
     return {
-        "source_id": first_text(root, "./tei:teiHeader//tei:idno"),
-        "number": number,
-        "author": author,
-        "title_short": f"Т. {number}" if number else "",
-        "title": title[:100],
+        "source_id": first_text(root, "./tei:teiHeader//tei:idno")[:20],
+        "number": first_text(root, "./tei:teiHeader//tei:num/@value"),
+        "author": first_text(root, "./tei:teiHeader//tei:author")[:50],
+        "title_short": first_text(root, "./tei:teiHeader//tei:title[@type='short']")[:50],
+        "title": first_text(root, "./tei:teiHeader//tei:title[@type='main']")[:100],
     }
 
 
 def extract_plain_text(tei_node) -> str:
-    """
-    Собирает читаемый текст из <text>, не захватывая морфологические <fs>.
-    """
     text_node = tei_node.xpath("./tei:text", namespaces=NS)
     if not text_node:
         return ""
@@ -119,7 +98,7 @@ def extract_morph_and_pos(w_node):
 
     pos = morph.get("category", "")
 
-    return pos, morph
+    return pos
 
 
 def extract_tokens(work: Work, tei_node):
@@ -131,7 +110,7 @@ def extract_tokens(work: Work, tei_node):
         word_text = clean_text("".join(w.xpath("./text()", namespaces=NS)))
         lemma = clean_text(w.get("lemma", ""))
 
-        pos, morph = extract_morph_and_pos(w)
+        pos = extract_morph_and_pos(w)
 
         if not word_text:
             continue
@@ -151,12 +130,7 @@ def extract_tokens(work: Work, tei_node):
 
 def extract_work_data(tei_node, volume: Volume) -> dict:
     source_id = first_text(tei_node, ".//tei:sourceDesc//tei:msIdentifier/tei:idno")
-    page_number_raw = first_attr(tei_node, ".//tei:sourceDesc//tei:head/tei:num/@value")
-
-    try:
-        page_number = int(page_number_raw) if page_number_raw else None
-    except ValueError:
-        page_number = None
+    page_number = first_attr(tei_node, ".//tei:sourceDesc//tei:head/tei:num/@value")
 
     date_from = first_attr(tei_node, ".//tei:origin/tei:origDate/@from")
     date_to = first_attr(tei_node, ".//tei:origin/tei:origDate/@to")
@@ -168,9 +142,6 @@ def extract_work_data(tei_node, volume: Volume) -> dict:
     title_desc = first_text(tei_node, './/tei:msContents/tei:msItem/tei:title[@type="desc"]')
     title_short = first_text(tei_node, './/tei:msContents/tei:msItem/tei:title[@type="short"]')
     title = first_text(tei_node, './/tei:msContents/tei:msItem/tei:title[@type="main"]')
-
-    if not title:
-        title = first_text(tei_node, ".//tei:titleStmt/tei:title")
 
     genre = first_text(tei_node, ".//tei:encodingDesc//tei:catDesc")
 
@@ -198,12 +169,6 @@ def extract_work_data(tei_node, volume: Volume) -> dict:
 
 @transaction.atomic
 def parse_volume(volume: Volume):
-    """
-    Главная функция:
-    принимает уже сохранённый Volume с xml_file,
-    удаляет старые Work/Token этого тома,
-    парсит XML заново.
-    """
     root = parse_xml_file(volume.xml_file.path)
 
     volume_data = extract_volume_data(root)

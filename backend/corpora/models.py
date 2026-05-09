@@ -30,7 +30,7 @@ class Work(models.Model):
     language = models.CharField(max_length=20, blank=True)
     title_desc = models.CharField(max_length=200, blank=True)
     title_short = models.CharField(max_length=50, blank=True)
-    title = models.CharField(max_length=100)
+    title = models.CharField(max_length=200)
     genre = models.CharField(max_length=20)
 
     plain_text = models.TextField()

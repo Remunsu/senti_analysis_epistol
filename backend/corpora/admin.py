@@ -1,11 +1,18 @@
 from django.contrib import admin
 from .models import Volume, Work, Token
+from .services.tei_parser import parse_volume
 
 
 @admin.register(Volume)
 class VolumeAdmin(admin.ModelAdmin):
     list_display = ("id", "number", "title", "author", "uploaded_at")
     search_fields = ("title", "author")
+
+    def save_model(self, request, obj, form, change):
+        super().save_model(request, obj, form, change)
+
+        if obj.xml_file:
+            parse_volume(obj)
 
 
 @admin.register(Work)
