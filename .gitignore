@@ -3,6 +3,7 @@ node_modules/
 dist/
 __pycache__/
 .env
+tei_volumes/
 
 # Logs
 logs
