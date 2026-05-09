@@ -24,5 +24,5 @@ class WorkAdmin(admin.ModelAdmin):
 
 @admin.register(Token)
 class TokenAdmin(admin.ModelAdmin):
-    list_display = ("id", "work", "text_position", "text", "lemma", "pos")
+    list_display = ("id", "text_position", "text", "lemma", "pos")
     search_fields = ("text", "lemma")

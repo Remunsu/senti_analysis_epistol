@@ -87,20 +87,6 @@ def extract_plain_text(tei_node) -> str:
     return text.strip()
 
 
-def extract_morph_and_pos(w_node):
-    morph = {}
-
-    for f in w_node.xpath("./tei:fs/tei:f", namespaces=NS):
-        name = f.get("name")
-        value = first_attr(f, "./tei:symbol/@value")
-        if name and value:
-            morph[name] = value
-
-    pos = morph.get("category", "")
-
-    return pos
-
-
 def extract_tokens(work: Work, tei_node):
     token_objects = []
 
@@ -110,9 +96,9 @@ def extract_tokens(work: Work, tei_node):
         word_text = clean_text("".join(w.xpath("./text()", namespaces=NS)))
         lemma = clean_text(w.get("lemma", ""))
 
-        pos = extract_morph_and_pos(w)
+        pos = first_attr(w,'./tei:fs/tei:f[@name="category"]/tei:symbol/@value')
 
-        if not word_text:
+        if not word_text or not lemma:
             continue
 
         token_objects.append(
