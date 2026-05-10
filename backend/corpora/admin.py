@@ -11,7 +11,7 @@ class VolumeAdmin(admin.ModelAdmin):
     def save_model(self, request, obj, form, change):
         super().save_model(request, obj, form, change)
 
-        if obj.xml_file:
+        if obj.xml_file and ("xml_file" in form.changed_data or not change):
             parse_volume(obj)
 
 

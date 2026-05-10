@@ -42,7 +42,7 @@ def parse_xml_file(path: str):
 def extract_volume_data(root) -> dict:
     return {
         "source_id": first_text(root, "./tei:teiHeader//tei:idno")[:20],
-        "number": first_text(root, "./tei:teiHeader//tei:num/@value"),
+        "number": first_attr(root, "./tei:teiHeader//tei:num/@value"),
         "author": first_text(root, "./tei:teiHeader//tei:author")[:50],
         "title_short": first_text(root, "./tei:teiHeader//tei:title[@type='short']")[:100],
         "title": first_text(root, "./tei:teiHeader//tei:title[@type='main']")[:200],

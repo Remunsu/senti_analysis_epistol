@@ -1,5 +1,5 @@
 <script setup>
-import { onMounted, ref, watch } from "vue"
+import { computed, onMounted, ref, watch } from "vue"
 
 const works = ref([])
 const volumes = ref([])
@@ -19,7 +19,19 @@ const ordering = ref("id")
 const loading = ref(false)
 const error = ref("")
 
+const currentPage = ref(1)
+const totalCount = ref(0)
+const nextPageUrl = ref(null)
+const previousPageUrl = ref(null)
+
+const pageSize = 50
+
 const API_BASE_URL = "http://127.0.0.1:8000/api"
+
+const totalPages = computed(() => {
+  if (!totalCount.value) return 1
+  return Math.ceil(totalCount.value / pageSize)
+})
 
 async function fetchVolumes() {
   const response = await fetch(`${API_BASE_URL}/volumes/`)
@@ -28,7 +40,10 @@ async function fetchVolumes() {
     throw new Error("Не удалось загрузить тома")
   }
 
-  volumes.value = await response.json()
+  const data = await response.json()
+
+  // Если volumes тоже пагинируются, берём results.
+  volumes.value = Array.isArray(data) ? data : data.results
 }
 
 async function fetchFilterOptions() {
@@ -41,11 +56,13 @@ async function fetchFilterOptions() {
   filterOptions.value = await response.json()
 }
 
-async function fetchWorks() {
+async function fetchWorks(page = 1) {
   loading.value = true
   error.value = ""
 
   const params = new URLSearchParams()
+
+  params.append("page", page)
 
   if (search.value) params.append("search", search.value)
   if (selectedVolume.value) params.append("volume", selectedVolume.value)
@@ -59,7 +76,23 @@ async function fetchWorks() {
       throw new Error("Не удалось загрузить произведения")
     }
 
-    works.value = await response.json()
+    const data = await response.json()
+
+    // DRF с пагинацией возвращает объект:
+    // { count, next, previous, results }
+    if (Array.isArray(data)) {
+      works.value = data
+      totalCount.value = data.length
+      nextPageUrl.value = null
+      previousPageUrl.value = null
+      currentPage.value = 1
+    } else {
+      works.value = data.results
+      totalCount.value = data.count
+      nextPageUrl.value = data.next
+      previousPageUrl.value = data.previous
+      currentPage.value = page
+    }
   } catch (err) {
     error.value = err.message || "Неизвестная ошибка"
   } finally {
@@ -67,18 +100,43 @@ async function fetchWorks() {
   }
 }
 
+function applyFilters() {
+  currentPage.value = 1
+  fetchWorks(1)
+}
+
 function resetFilters() {
   search.value = ""
   selectedVolume.value = ""
   selectedGenre.value = ""
   ordering.value = "id"
-  fetchWorks()
+
+  currentPage.value = 1
+  fetchWorks(1)
+}
+
+function goToPage(page) {
+  if (page < 1 || page > totalPages.value || loading.value) return
+
+  fetchWorks(page)
+}
+
+function goToPreviousPage() {
+  if (!previousPageUrl.value || loading.value) return
+
+  fetchWorks(currentPage.value - 1)
+}
+
+function goToNextPage() {
+  if (!nextPageUrl.value || loading.value) return
+
+  fetchWorks(currentPage.value + 1)
 }
 
 watch(
   [selectedVolume, selectedGenre, ordering],
   () => {
-    fetchWorks()
+    applyFilters()
   }
 )
 
@@ -86,7 +144,7 @@ onMounted(async () => {
   try {
     await fetchVolumes()
     await fetchFilterOptions()
-    await fetchWorks()
+    await fetchWorks(1)
   } catch (err) {
     error.value = err.message || "Неизвестная ошибка"
   }
@@ -100,6 +158,9 @@ onMounted(async () => {
         <h1 class="text-3xl font-bold text-slate-900">
           Произведения
         </h1>
+        <p class="mt-2 text-slate-600">
+          Просмотр, поиск, фильтрация и сортировка корпуса.
+        </p>
       </div>
 
       <section class="mb-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
@@ -110,7 +171,7 @@ onMounted(async () => {
             </label>
             <input
               v-model="search"
-              @keyup.enter="fetchWorks"
+              @keyup.enter="applyFilters"
               type="text"
               placeholder="Название или текст..."
               class="w-full rounded-xl border border-slate-300 px-4 py-2 text-slate-900 outline-none focus:border-slate-500"
@@ -176,7 +237,7 @@ onMounted(async () => {
 
         <div class="mt-4 flex flex-wrap gap-3">
           <button
-            @click="fetchWorks"
+            @click="applyFilters"
             class="rounded-xl bg-slate-900 px-5 py-2 font-medium text-white hover:bg-slate-700"
           >
             Найти
@@ -196,9 +257,9 @@ onMounted(async () => {
       </div>
 
       <section class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-        <div class="flex items-center justify-between border-b border-slate-200 px-5 py-4">
+        <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
           <p class="text-sm text-slate-600">
-            Найдено: {{ works.length }}
+            Найдено: {{ totalCount }}
           </p>
 
           <p v-if="loading" class="text-sm text-slate-500">
@@ -207,7 +268,7 @@ onMounted(async () => {
         </div>
 
         <div class="overflow-x-auto">
-          <table class="w-full table-fixed border-collapse text-left">
+          <table class="w-full border-collapse text-left">
             <thead class="bg-slate-100 text-sm text-slate-700">
               <tr>
                 <th class="w-[35%] px-5 py-3 font-semibold">Название</th>
@@ -238,14 +299,14 @@ onMounted(async () => {
                 </td>
 
                 <td class="px-5 py-4">
-                  <span class="px-3 py-1 text-sm text-slate-700">
+                  <span class="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-700">
                     {{ work.genre || "—" }}
                   </span>
                 </td>
 
                 <td class="px-5 py-4 text-slate-700">
-                  <span v-if="work.date">
-                    {{ work.date }}
+                  <span v-if="work.date_from || work.date_to">
+                    {{ work.date_from }}<span v-if="work.date_to">–{{ work.date_to }}</span>
                   </span>
                   <span v-else>—</span>
                 </td>
@@ -262,6 +323,76 @@ onMounted(async () => {
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-5 py-4">
+          <p class="text-sm text-slate-600">
+            Страница {{ currentPage }} из {{ totalPages }}
+          </p>
+
+          <div class="flex items-center gap-2">
+            <button
+              @click="goToPreviousPage"
+              :disabled="!previousPageUrl || loading"
+              class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Назад
+            </button>
+
+            <button
+              v-if="currentPage > 2"
+              @click="goToPage(1)"
+              class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            >
+              1
+            </button>
+
+            <span v-if="currentPage > 3" class="px-2 text-slate-500">
+              ...
+            </span>
+
+            <button
+              v-if="currentPage > 1"
+              @click="goToPage(currentPage - 1)"
+              class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            >
+              {{ currentPage - 1 }}
+            </button>
+
+            <button
+              class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white"
+            >
+              {{ currentPage }}
+            </button>
+
+            <button
+              v-if="currentPage < totalPages"
+              @click="goToPage(currentPage + 1)"
+              class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            >
+              {{ currentPage + 1 }}
+            </button>
+
+            <span v-if="currentPage < totalPages - 2" class="px-2 text-slate-500">
+              ...
+            </span>
+
+            <button
+              v-if="currentPage < totalPages - 1"
+              @click="goToPage(totalPages)"
+              class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            >
+              {{ totalPages }}
+            </button>
+
+            <button
+              @click="goToNextPage"
+              :disabled="!nextPageUrl || loading"
+              class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Вперёд
+            </button>
+          </div>
         </div>
       </section>
     </div>
