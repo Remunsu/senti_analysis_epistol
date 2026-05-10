@@ -44,8 +44,8 @@ def extract_volume_data(root) -> dict:
         "source_id": first_text(root, "./tei:teiHeader//tei:idno")[:20],
         "number": first_text(root, "./tei:teiHeader//tei:num/@value"),
         "author": first_text(root, "./tei:teiHeader//tei:author")[:50],
-        "title_short": first_text(root, "./tei:teiHeader//tei:title[@type='short']")[:50],
-        "title": first_text(root, "./tei:teiHeader//tei:title[@type='main']")[:100],
+        "title_short": first_text(root, "./tei:teiHeader//tei:title[@type='short']")[:100],
+        "title": first_text(root, "./tei:teiHeader//tei:title[@type='main']")[:200],
     }
 
 
@@ -118,8 +118,7 @@ def extract_work_data(tei_node, volume: Volume) -> dict:
     source_id = first_text(tei_node, ".//tei:sourceDesc//tei:msIdentifier/tei:idno")
     page_number = first_attr(tei_node, ".//tei:sourceDesc//tei:head/tei:num/@value")
 
-    date_from = first_attr(tei_node, ".//tei:origin/tei:origDate/@from")
-    date_to = first_attr(tei_node, ".//tei:origin/tei:origDate/@to")
+    date = first_attr(tei_node, ".//tei:origin/tei:origDate/@to")
     place = first_text(tei_node, ".//tei:origin/tei:origPlace")
 
     author = first_text(tei_node, ".//tei:msContents/tei:msItem/tei:author")
@@ -139,14 +138,13 @@ def extract_work_data(tei_node, volume: Volume) -> dict:
         "source_id": source_id[:20],
         "note": "",
         "page_number": page_number,
-        "date_from": date_from[:20],
-        "date_to": date_to[:20],
+        "date": date[:20],
         "place": place[:50],
         "author": (author or volume.author)[:50],
         "language": language[:20],
         "title_desc": title_desc[:200],
-        "title_short": title_short[:50],
-        "title": title[:100],
+        "title_short": title_short[:100],
+        "title": title[:200],
         "genre": genre[:20],
         "plain_text": plain_text,
         "raw_xml": raw_xml,
