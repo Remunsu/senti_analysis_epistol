@@ -9,7 +9,7 @@ class VolumeSerializer(serializers.ModelSerializer):
 
 
 class WorkListSerializer(serializers.ModelSerializer):
-    volume_title = serializers.CharField(source="volume.title", read_only=True)
+    volume_title = serializers.CharField(source="volume.title_short", read_only=True)
 
     class Meta:
         model = Work

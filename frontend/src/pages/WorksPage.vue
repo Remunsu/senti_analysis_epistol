@@ -42,7 +42,6 @@ async function fetchVolumes() {
 
   const data = await response.json()
 
-  // Если volumes тоже пагинируются, берём results.
   volumes.value = Array.isArray(data) ? data : data.results
 }
 
@@ -78,8 +77,6 @@ async function fetchWorks(page = 1) {
 
     const data = await response.json()
 
-    // DRF с пагинацией возвращает объект:
-    // { count, next, previous, results }
     if (Array.isArray(data)) {
       works.value = data
       totalCount.value = data.length
@@ -158,9 +155,6 @@ onMounted(async () => {
         <h1 class="text-3xl font-bold text-slate-900">
           Произведения
         </h1>
-        <p class="mt-2 text-slate-600">
-          Просмотр, поиск, фильтрация и сортировка корпуса.
-        </p>
       </div>
 
       <section class="mb-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
@@ -186,7 +180,7 @@ onMounted(async () => {
               v-model="selectedVolume"
               class="w-full rounded-xl border border-slate-300 px-4 py-2 text-slate-900 outline-none focus:border-slate-500"
             >
-              <option value="">Все тома</option>
+              <option value="">Все</option>
               <option
                 v-for="volume in volumes"
                 :key="volume.id"
@@ -205,7 +199,7 @@ onMounted(async () => {
               v-model="selectedGenre"
               class="w-full rounded-xl border border-slate-300 px-4 py-2 text-slate-900 outline-none focus:border-slate-500"
             >
-              <option value="">Все жанры</option>
+              <option value="">Все</option>
               <option
                 v-for="genre in filterOptions.genres"
                 :key="genre"
@@ -294,19 +288,17 @@ onMounted(async () => {
                   </div>
                 </td>
 
-                <td class="px-5 py-4 text-slate-700">
+                <td class="px-5 py-4 text-sm   text-slate-700">
                   {{ work.author || "—" }}
                 </td>
 
-                <td class="px-5 py-4">
-                  <span class="rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-700">
+                <td class="px-5 py-4 text-sm text-slate-700">
                     {{ work.genre || "—" }}
-                  </span>
                 </td>
 
                 <td class="px-5 py-4 text-slate-700">
-                  <span v-if="work.date_from || work.date_to">
-                    {{ work.date_from }}<span v-if="work.date_to">–{{ work.date_to }}</span>
+                  <span v-if="work.date">
+                    {{ work.date }}
                   </span>
                   <span v-else>—</span>
                 </td>
