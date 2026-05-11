@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue"
+import WorksTable from "../components/WorksTable.vue"
 
 const works = ref([])
 const volumes = ref([])
@@ -23,6 +24,8 @@ const currentPage = ref(1)
 const totalCount = ref(0)
 const nextPageUrl = ref(null)
 const previousPageUrl = ref(null)
+const selectedWorkIds = ref(new Set())
+const allFilteredSelected = ref(false)
 
 const pageSize = 50
 
@@ -32,6 +35,29 @@ const totalPages = computed(() => {
   if (!totalCount.value) return 1
   return Math.ceil(totalCount.value / pageSize)
 })
+
+const selectedWorksCount = computed(() => {
+  if (allFilteredSelected.value) return totalCount.value
+
+  return selectedWorkIds.value.size
+})
+
+const currentPageWorkIds = computed(() => works.value.map((work) => work.id))
+
+const selectedOnPageCount = computed(() => {
+  if (allFilteredSelected.value) return works.value.length
+
+  return currentPageWorkIds.value.filter((id) => selectedWorkIds.value.has(id)).length
+})
+
+const allCurrentPageSelected = computed(() => {
+  return works.value.length > 0 && selectedOnPageCount.value === works.value.length
+})
+
+function clearSelection() {
+  selectedWorkIds.value = new Set()
+  allFilteredSelected.value = false
+}
 
 async function fetchVolumes() {
   const response = await fetch(`${API_BASE_URL}/volumes/`)
@@ -99,6 +125,7 @@ async function fetchWorks(page = 1) {
 
 function applyFilters() {
   currentPage.value = 1
+  clearSelection()
   fetchWorks(1)
 }
 
@@ -109,7 +136,43 @@ function resetFilters() {
   ordering.value = "id"
 
   currentPage.value = 1
+  clearSelection()
   fetchWorks(1)
+}
+
+function toggleWorkSelection(workId) {
+  if (allFilteredSelected.value) return
+
+  const nextSelectedIds = new Set(selectedWorkIds.value)
+
+  if (nextSelectedIds.has(workId)) {
+    nextSelectedIds.delete(workId)
+  } else {
+    nextSelectedIds.add(workId)
+  }
+
+  selectedWorkIds.value = nextSelectedIds
+}
+
+function toggleCurrentPageSelection() {
+  if (allFilteredSelected.value) return
+
+  const nextSelectedIds = new Set(selectedWorkIds.value)
+
+  if (allCurrentPageSelected.value) {
+    currentPageWorkIds.value.forEach((id) => nextSelectedIds.delete(id))
+  } else {
+    currentPageWorkIds.value.forEach((id) => nextSelectedIds.add(id))
+  }
+
+  selectedWorkIds.value = nextSelectedIds
+}
+
+function selectAllFilteredWorks() {
+  if (!totalCount.value) return
+
+  selectedWorkIds.value = new Set()
+  allFilteredSelected.value = true
 }
 
 function goToPage(page) {
@@ -149,7 +212,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <main class="min-h-screen bg-slate-50 p-6">
+  <main class="p-6">
     <div class="mx-auto max-w-7xl">
       <div class="mb-6">
         <h1 class="text-3xl font-bold text-slate-900">
@@ -221,8 +284,8 @@ onMounted(async () => {
               <option value="id">По добавлению</option>
               <option value="title">Название А–Я</option>
               <option value="-title">Название Я–А</option>
-              <option value="date_from">Дата ↑</option>
-              <option value="-date_from">Дата ↓</option>
+              <option value="date">Дата ↑</option>
+              <option value="-date">Дата ↓</option>
               <option value="genre">Жанр</option>
               <option value="page_number">Страница</option>
             </select>
@@ -252,70 +315,28 @@ onMounted(async () => {
 
       <section class="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
         <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
-          <p class="text-sm text-slate-600">
-            Найдено: {{ totalCount }}
-          </p>
+          <div>
+            <p class="text-sm text-slate-600">
+              Найдено: {{ totalCount }}
+            </p>
+            <p v-if="selectedWorksCount" class="mt-1 text-sm font-medium text-slate-900">
+              Выбрано: {{ selectedWorksCount }}
+            </p>
+          </div>
 
           <p v-if="loading" class="text-sm text-slate-500">
             Обновление таблицы...
           </p>
         </div>
 
-        <div class="overflow-x-auto">
-          <table class="w-full border-collapse text-left">
-            <thead class="bg-slate-100 text-sm text-slate-700">
-              <tr>
-                <th class="w-[35%] px-5 py-3 font-semibold">Название</th>
-                <th class="w-[15%] px-5 py-3 font-semibold">Автор</th>
-                <th class="w-[20%] px-5 py-3 font-semibold">Жанр</th>
-                <th class="w-[15%] px-5 py-3 font-semibold">Дата</th>
-                <th class="w-[15%] px-5 py-3 font-semibold">Том</th>
-              </tr>
-            </thead>
-
-            <tbody class="divide-y divide-slate-200">
-              <tr
-                v-for="work in works"
-                :key="work.id"
-                class="hover:bg-slate-50"
-              >
-                <td class="max-w-md px-5 py-4">
-                  <div class="font-medium text-slate-900">
-                    {{ work.title }}
-                  </div>
-                  <div v-if="work.title_short" class="mt-1 text-sm text-slate-500">
-                    {{ work.title_short }}
-                  </div>
-                </td>
-
-                <td class="px-5 py-4 text-sm   text-slate-700">
-                  {{ work.author || "—" }}
-                </td>
-
-                <td class="px-5 py-4 text-sm text-slate-700">
-                    {{ work.genre || "—" }}
-                </td>
-
-                <td class="px-5 py-4 text-slate-700">
-                  <span v-if="work.date">
-                    {{ work.date }}
-                  </span>
-                  <span v-else>—</span>
-                </td>
-
-                <td class="px-5 py-4 text-slate-700">
-                  {{ work.volume_title || "—" }}
-                </td>
-              </tr>
-
-              <tr v-if="!loading && works.length === 0">
-                <td colspan="6" class="px-5 py-8 text-center text-slate-500">
-                  Произведения не найдены
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
+        <WorksTable
+          :works="works"
+          :loading="loading"
+          :selected-ids="selectedWorkIds"
+          :all-filtered-selected="allFilteredSelected"
+          @toggle-work="toggleWorkSelection"
+          @toggle-page="toggleCurrentPageSelection"
+        />
 
         <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-5 py-4">
           <p class="text-sm text-slate-600">

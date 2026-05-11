@@ -1,8 +1,13 @@
-<script setup lang="ts"></script>
-<script setup>import WorksPage from "./pages/WorksPage.vue"</script>
+<script setup lang="ts">
+import { RouterView } from "vue-router"
+import AppNav from "./components/AppNav.vue"
+</script>
 
 <template>
-  <WorksPage />
+  <div class="min-h-screen bg-slate-50">
+    <AppNav />
+    <RouterView />
+  </div>
 </template>
 
 <style scoped></style>
