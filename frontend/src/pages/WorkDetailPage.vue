@@ -86,7 +86,9 @@ onMounted(() => {
           </h1>
 
           <p v-if="work?.title_short" class="mt-2 text-slate-600">
-            {{ work.title_short }}
+            <RouterLink :to="{ name: 'volume-detail', params: { id: work.volume } }" class="font-medium text-slate-900 hover:text-slate-600 hover:underline">
+              {{ work.title_short }}
+            </RouterLink>
           </p>
         </div>
       </div>
@@ -101,10 +103,6 @@ onMounted(() => {
 
       <template v-else-if="work">
         <section class="mb-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-          <h2 class="mb-4 text-lg font-semibold text-slate-900">
-            Свойства
-          </h2>
-
           <dl class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <div
               v-for="[label, value] in properties"
@@ -159,7 +157,7 @@ onMounted(() => {
           <textarea
             readonly
             :value="displayedContent"
-            class="min-h-[640px] w-full resize-y border-0 bg-white p-5 font-mono text-sm leading-6 text-slate-900 outline-none"
+            class="min-h-96 w-full resize-y border-0 bg-white p-5 font-mono text-sm leading-6 text-slate-900 outline-none"
           />
         </section>
       </template>
