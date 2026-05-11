@@ -17,10 +17,11 @@ class VolumeViewSet(viewsets.ReadOnlyModelViewSet):
 
 class XMLUploadView(APIView):
     parser_classes = [MultiPartParser, FormParser]
+    allowed_content_types = {"text/xml", "application/xml"}
 
     def post(self, request):
         upload_mode = request.data.get("mode")
-        xml_file = request.FILES.get("file")
+        xml_files = request.FILES.getlist("files") or request.FILES.getlist("file")
 
         if upload_mode not in {"volume", "work"}:
             return Response(
@@ -28,21 +29,36 @@ class XMLUploadView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        if not xml_file:
+        if not xml_files:
             return Response(
-                {"detail": "Загрузите XML-файл"},
+                {"detail": "Загрузите один или несколько XML-файлов"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        volume = Volume.objects.create(xml_file=xml_file)
+        invalid_files = [xml_file.name for xml_file in xml_files if not self.is_xml_file(xml_file)]
+
+        if invalid_files:
+            return Response(
+                {"detail": f"Можно загружать только XML-файлы: {', '.join(invalid_files)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        created_volumes = []
+        created_works = []
 
         try:
-            if upload_mode == "volume":
-                works = parse_volume(volume)
-            else:
-                works = [parse_single_work(volume)]
+            for xml_file in xml_files:
+                volume = Volume.objects.create(xml_file=xml_file)
+                created_volumes.append(volume)
+
+                if upload_mode == "volume":
+                    created_works.extend(parse_volume(volume))
+                else:
+                    created_works.append(parse_single_work(volume))
         except Exception as exc:
-            volume.delete()
+            for volume in created_volumes:
+                volume.delete()
+
             return Response(
                 {"detail": str(exc) or "Не удалось разобрать XML"},
                 status=status.HTTP_400_BAD_REQUEST,
@@ -51,10 +67,17 @@ class XMLUploadView(APIView):
         return Response(
             {
                 "mode": upload_mode,
-                "volume": VolumeSerializer(volume, context={"request": request}).data,
-                "works": WorkListSerializer(works, many=True).data,
+                "volume": VolumeSerializer(created_volumes[0], context={"request": request}).data,
+                "volumes": VolumeSerializer(created_volumes, many=True, context={"request": request}).data,
+                "works": WorkListSerializer(created_works, many=True).data,
             },
             status=status.HTTP_201_CREATED,
+        )
+
+    def is_xml_file(self, xml_file):
+        return (
+            xml_file.name.lower().endswith(".xml") or
+            xml_file.content_type in self.allowed_content_types
         )
 
 

@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue"
 import { RouterLink, useRoute } from "vue-router"
+import PaginationControls from "../components/PaginationControls.vue"
 
 const route = useRoute()
 
@@ -145,6 +146,13 @@ onMounted(() => {
   <main class="p-6">
     <div class="mx-auto max-w-7xl">
       <div class="mb-6">
+        <RouterLink
+          to="/volumes"
+          class="text-sm font-medium text-slate-600 hover:text-slate-900"
+        >
+          Назад к томам
+        </RouterLink>
+
         <h1 class="text-3xl font-bold text-slate-900">
           {{ volume?.title || "Том" }}
         </h1>
@@ -256,51 +264,16 @@ onMounted(() => {
             </table>
           </div>
 
-          <div class="flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-5 py-4">
-            <p class="text-sm text-slate-600">
-              Страница {{ currentPage }} из {{ totalPages }}
-            </p>
-
-            <div class="flex items-center gap-2">
-              <button
-                @click="goToPreviousPage"
-                :disabled="!previousPageUrl || worksLoading"
-                class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Назад
-              </button>
-
-              <button
-                v-if="currentPage > 1"
-                @click="goToPage(currentPage - 1)"
-                class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
-              >
-                {{ currentPage - 1 }}
-              </button>
-
-              <button
-                class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white"
-              >
-                {{ currentPage }}
-              </button>
-
-              <button
-                v-if="currentPage < totalPages"
-                @click="goToPage(currentPage + 1)"
-                class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
-              >
-                {{ currentPage + 1 }}
-              </button>
-
-              <button
-                @click="goToNextPage"
-                :disabled="!nextPageUrl || worksLoading"
-                class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
-              >
-                Вперёд
-              </button>
-            </div>
-          </div>
+          <PaginationControls
+            :current-page="currentPage"
+            :total-pages="totalPages"
+            :has-previous="Boolean(previousPageUrl)"
+            :has-next="Boolean(nextPageUrl)"
+            :loading="worksLoading"
+            @previous="goToPreviousPage"
+            @next="goToNextPage"
+            @page="goToPage"
+          />
         </section>
       </template>
     </div>

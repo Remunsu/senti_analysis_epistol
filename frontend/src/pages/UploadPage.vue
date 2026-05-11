@@ -3,7 +3,7 @@ import { computed, ref } from "vue"
 import { RouterLink } from "vue-router"
 
 const selectedMode = ref("volume")
-const selectedFile = ref(null)
+const selectedFiles = ref([])
 const submitting = ref(false)
 const error = ref("")
 const uploadResult = ref(null)
@@ -24,16 +24,35 @@ const modeOptions = [
 ]
 
 const uploadedWorks = computed(() => uploadResult.value?.works || [])
+const uploadedVolumes = computed(() => uploadResult.value?.volumes || [])
+const selectedFilesCount = computed(() => selectedFiles.value.length)
+
+function isXmlFile(file) {
+  return (
+    file.name.toLowerCase().endsWith(".xml") ||
+    ["text/xml", "application/xml"].includes(file.type)
+  )
+}
 
 function handleFileChange(event) {
-  selectedFile.value = event.target.files?.[0] || null
+  const files = Array.from(event.target.files || [])
+  const invalidFiles = files.filter((file) => !isXmlFile(file))
+
   uploadResult.value = null
+
+  if (invalidFiles.length) {
+    selectedFiles.value = []
+    error.value = `Можно загружать только XML-файлы: ${invalidFiles.map((file) => file.name).join(", ")}`
+    return
+  }
+
+  selectedFiles.value = files
   error.value = ""
 }
 
 async function uploadXml() {
-  if (!selectedFile.value) {
-    error.value = "Выберите XML-файл"
+  if (!selectedFiles.value.length) {
+    error.value = "Выберите один или несколько XML-файлов"
     return
   }
 
@@ -44,7 +63,9 @@ async function uploadXml() {
   const formData = new FormData()
 
   formData.append("mode", selectedMode.value)
-  formData.append("file", selectedFile.value)
+  selectedFiles.value.forEach((file) => {
+    formData.append("files", file)
+  })
 
   try {
     const response = await fetch(`${API_BASE_URL}/upload/`, {
@@ -112,17 +133,29 @@ async function uploadXml() {
 
         <div class="mb-5">
           <label class="mb-2 block text-sm font-semibold text-slate-900">
-            XML-файл
+            XML-файлы
           </label>
           <input
             type="file"
+            multiple
             accept=".xml,text/xml,application/xml"
             class="block w-full rounded-xl border border-slate-300 px-4 py-2 text-slate-900 file:mr-4 file:rounded-lg file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:font-medium file:text-white hover:file:bg-slate-700"
             @change="handleFileChange"
           />
-          <p v-if="selectedFile" class="mt-2 text-sm text-slate-600">
-            Выбран файл: {{ selectedFile.name }}
-          </p>
+          <div v-if="selectedFiles.length" class="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <p class="text-sm font-medium text-slate-900">
+              Выбрано файлов: {{ selectedFilesCount }}
+            </p>
+
+            <ul class="mt-2 space-y-1 text-sm text-slate-600">
+              <li
+                v-for="file in selectedFiles"
+                :key="`${file.name}-${file.size}`"
+              >
+                {{ file.name }}
+              </li>
+            </ul>
+          </div>
         </div>
 
         <div v-if="error" class="mb-4 rounded-xl bg-red-50 p-4 text-red-700">
@@ -131,7 +164,7 @@ async function uploadXml() {
 
         <button
           @click="uploadXml"
-          :disabled="submitting || !selectedFile"
+          :disabled="submitting || !selectedFiles.length"
           class="rounded-xl bg-slate-900 px-5 py-2 font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
         >
           {{ submitting ? "Загрузка..." : "Загрузить" }}
@@ -148,10 +181,19 @@ async function uploadXml() {
 
         <div class="mt-4 flex flex-wrap gap-3">
           <RouterLink
-            :to="{ name: 'volume-detail', params: { id: uploadResult.volume.id } }"
+            v-if="uploadedVolumes.length === 1"
+            :to="{ name: 'volume-detail', params: { id: uploadedVolumes[0].id } }"
             class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
           >
             Открыть том
+          </RouterLink>
+
+          <RouterLink
+            v-else
+            to="/volumes"
+            class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700"
+          >
+            Открыть список томов
           </RouterLink>
 
           <RouterLink
@@ -165,8 +207,29 @@ async function uploadXml() {
 
         <div class="mt-5">
           <p class="text-sm text-slate-600">
+            Создано томов: {{ uploadedVolumes.length }}
+          </p>
+          <p class="text-sm text-slate-600">
             Создано произведений: {{ uploadedWorks.length }}
           </p>
+
+          <ul v-if="uploadedVolumes.length > 1" class="mt-3 divide-y divide-slate-200 rounded-xl border border-slate-200">
+            <li
+              v-for="volume in uploadedVolumes"
+              :key="volume.id"
+              class="px-4 py-3"
+            >
+              <RouterLink
+                :to="{ name: 'volume-detail', params: { id: volume.id } }"
+                class="font-medium text-slate-900 hover:text-slate-600 hover:underline"
+              >
+                {{ volume.title || "Без названия" }}
+              </RouterLink>
+              <p class="mt-1 text-sm text-slate-500">
+                {{ volume.author || "Автор не указан" }}
+              </p>
+            </li>
+          </ul>
 
           <ul v-if="uploadedWorks.length" class="mt-3 divide-y divide-slate-200 rounded-xl border border-slate-200">
             <li

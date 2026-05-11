@@ -81,6 +81,23 @@ onMounted(() => {
     <div class="mx-auto max-w-7xl">
       <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
+          <div class="mb-3 flex flex-wrap gap-3 text-sm">
+            <RouterLink
+              to="/"
+              class="font-medium text-slate-600 hover:text-slate-900"
+            >
+              Назад к произведениям
+            </RouterLink>
+
+            <RouterLink
+              v-if="work?.volume"
+              :to="{ name: 'volume-detail', params: { id: work.volume } }"
+              class="font-medium text-slate-600 hover:text-slate-900"
+            >
+              К тому
+            </RouterLink>
+          </div>
+
           <h1 class="mt-3 text-3xl font-bold text-slate-900">
             {{ work?.title || "Произведение" }}
           </h1>

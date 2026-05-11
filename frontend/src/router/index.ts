@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import NotFoundPage from '../pages/NotFoundPage.vue'
 import UploadPage from '../pages/UploadPage.vue'
 import VolumeDetailPage from '../pages/VolumeDetailPage.vue'
 import VolumesPage from '../pages/VolumesPage.vue'
@@ -32,6 +33,11 @@ const router = createRouter({
       path: '/upload',
       name: 'upload',
       component: UploadPage,
+    },
+    {
+      path: '/:pathMatch(.*)*',
+      name: 'not-found',
+      component: NotFoundPage,
     },
   ],
 })
