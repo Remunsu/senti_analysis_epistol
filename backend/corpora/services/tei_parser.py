@@ -31,6 +31,16 @@ def first_attr(node, xpath: str) -> str:
     return clean_text(str(result[0]))
 
 
+def to_int(value: str):
+    if value in (None, ""):
+        return None
+
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def parse_xml_file(path: str):
     text = Path(path).read_text(encoding="utf-8")
     text = re.sub(r'encoding="[^"]+"', 'encoding="UTF-8"', text, count=1)
@@ -39,10 +49,14 @@ def parse_xml_file(path: str):
     return etree.fromstring(text.encode("utf-8"), parser=parser)
 
 
+def local_name(node) -> str:
+    return etree.QName(node).localname
+
+
 def extract_volume_data(root) -> dict:
     return {
         "source_id": first_text(root, "./tei:teiHeader//tei:idno")[:20],
-        "number": first_attr(root, "./tei:teiHeader//tei:num/@value"),
+        "number": to_int(first_attr(root, "./tei:teiHeader//tei:num/@value")),
         "author": first_text(root, "./tei:teiHeader//tei:author")[:50],
         "title_short": first_text(root, "./tei:teiHeader//tei:title[@type='short']")[:100],
         "title": first_text(root, "./tei:teiHeader//tei:title[@type='main']")[:200],
@@ -116,7 +130,7 @@ def extract_tokens(work: Work, tei_node):
 
 def extract_work_data(tei_node, volume: Volume) -> dict:
     source_id = first_text(tei_node, ".//tei:sourceDesc//tei:msIdentifier/tei:idno")
-    page_number = first_attr(tei_node, ".//tei:sourceDesc//tei:head/tei:num/@value")
+    page_number = to_int(first_attr(tei_node, ".//tei:sourceDesc//tei:head/tei:num/@value"))
 
     date = first_attr(tei_node, ".//tei:origin/tei:origDate/@to")
     place = first_text(tei_node, ".//tei:origin/tei:origPlace")
@@ -151,16 +165,26 @@ def extract_work_data(tei_node, volume: Volume) -> dict:
     }
 
 
-@transaction.atomic
-def parse_volume(volume: Volume):
-    root = parse_xml_file(volume.xml_file.path)
-
-    volume_data = extract_volume_data(root)
-
+def apply_volume_data(volume: Volume, volume_data: dict):
     for field, value in volume_data.items():
         setattr(volume, field, value)
 
     volume.save()
+
+
+def create_work_from_tei(tei_node, volume: Volume):
+    work_data = extract_work_data(tei_node, volume)
+    work = Work.objects.create(**work_data)
+    extract_tokens(work, tei_node)
+
+    return work
+
+
+@transaction.atomic
+def parse_volume(volume: Volume):
+    root = parse_xml_file(volume.xml_file.path)
+
+    apply_volume_data(volume, extract_volume_data(root))
 
     volume.works.all().delete()
 
@@ -169,9 +193,38 @@ def parse_volume(volume: Volume):
     created_works = []
 
     for tei_node in tei_nodes:
-        work_data = extract_work_data(tei_node, volume)
-        work = Work.objects.create(**work_data)
-        extract_tokens(work, tei_node)
-        created_works.append(work)
+        created_works.append(create_work_from_tei(tei_node, volume))
 
     return created_works
+
+
+@transaction.atomic
+def parse_single_work(volume: Volume):
+    root = parse_xml_file(volume.xml_file.path)
+
+    if local_name(root) == "TEI":
+        tei_node = root
+    else:
+        tei_nodes = root.xpath(".//tei:TEI[tei:text]", namespaces=NS)
+        if not tei_nodes:
+            raise ValueError("В XML не найдено отдельное TEI-произведение")
+
+        tei_node = tei_nodes[0]
+
+    volume_data = extract_volume_data(tei_node)
+    work_preview = extract_work_data(tei_node, volume)
+
+    if not volume_data.get("title"):
+        volume_data["title"] = work_preview["title"] or work_preview["title_short"]
+
+    if not volume_data.get("title_short"):
+        volume_data["title_short"] = work_preview["title_short"] or work_preview["title"]
+
+    if not volume_data.get("author"):
+        volume_data["author"] = work_preview["author"]
+
+    apply_volume_data(volume, volume_data)
+
+    volume.works.all().delete()
+
+    return create_work_from_tei(tei_node, volume)

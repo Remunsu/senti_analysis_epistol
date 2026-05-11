@@ -1,14 +1,61 @@
 from django.db.models import Q
+from rest_framework import status
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework import viewsets, filters 
 from rest_framework.response import Response
+from rest_framework.views import APIView
 from rest_framework.decorators import action
 from .models import Volume, Work
 from .serializers import VolumeSerializer, WorkListSerializer, WorkDetailSerializer
+from .services.tei_parser import parse_single_work, parse_volume
 
 
 class VolumeViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Volume.objects.all().order_by("number", "id")
     serializer_class = VolumeSerializer
+
+
+class XMLUploadView(APIView):
+    parser_classes = [MultiPartParser, FormParser]
+
+    def post(self, request):
+        upload_mode = request.data.get("mode")
+        xml_file = request.FILES.get("file")
+
+        if upload_mode not in {"volume", "work"}:
+            return Response(
+                {"detail": "Укажите режим загрузки: volume или work"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not xml_file:
+            return Response(
+                {"detail": "Загрузите XML-файл"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        volume = Volume.objects.create(xml_file=xml_file)
+
+        try:
+            if upload_mode == "volume":
+                works = parse_volume(volume)
+            else:
+                works = [parse_single_work(volume)]
+        except Exception as exc:
+            volume.delete()
+            return Response(
+                {"detail": str(exc) or "Не удалось разобрать XML"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            {
+                "mode": upload_mode,
+                "volume": VolumeSerializer(volume, context={"request": request}).data,
+                "works": WorkListSerializer(works, many=True).data,
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class WorkViewSet(viewsets.ReadOnlyModelViewSet):

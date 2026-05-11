@@ -35,7 +35,6 @@ const properties = computed(() => {
     ["Название", volume.value.title],
     ["Краткое название", volume.value.title_short],
     ["Автор", volume.value.author],
-    ["XML файл", volume.value.xml_file],
     ["Загружен", formatDateTime(volume.value.uploaded_at)],
   ]
 })
