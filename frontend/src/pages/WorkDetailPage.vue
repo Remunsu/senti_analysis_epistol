@@ -23,13 +23,11 @@ const properties = computed(() => {
   if (!work.value) return []
 
   return [
-    ["ID", work.value.id],
     ["ID источника", work.value.source_id],
     ["Том", work.value.volume_title || work.value.volume],
-    ["ID тома", work.value.volume],
     ["Название", work.value.title],
     ["Краткое название", work.value.title_short],
-    ["Описание названия", work.value.title_desc],
+    ["Описание", work.value.title_desc],
     ["Автор", work.value.author],
     ["Жанр", work.value.genre],
     ["Дата", work.value.date],
@@ -83,13 +81,6 @@ onMounted(() => {
     <div class="mx-auto max-w-7xl">
       <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-          <RouterLink
-            to="/"
-            class="text-sm font-medium text-slate-600 hover:text-slate-900"
-          >
-            Назад к произведениям
-          </RouterLink>
-
           <h1 class="mt-3 text-3xl font-bold text-slate-900">
             {{ work?.title || "Произведение" }}
           </h1>
@@ -168,7 +159,7 @@ onMounted(() => {
           <textarea
             readonly
             :value="displayedContent"
-            class="min-h-[520px] w-full resize-y border-0 bg-white p-5 font-mono text-sm leading-6 text-slate-900 outline-none"
+            class="min-h-[640px] w-full resize-y border-0 bg-white p-5 font-mono text-sm leading-6 text-slate-900 outline-none"
           />
         </section>
       </template>
