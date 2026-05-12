@@ -183,7 +183,7 @@ onUnmounted(() => {
           <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
             <div class="border-b border-slate-200 px-5 py-4">
               <h2 class="text-lg font-semibold text-slate-900">
-                По годам
+                По датам
               </h2>
             </div>
 

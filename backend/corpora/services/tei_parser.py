@@ -41,18 +41,17 @@ def to_int(value: str):
         return None
 
 
-def extract_year(value: str):
-    match = re.search(r"\d{4}", value or "")
-    return int(match.group(0)) if match else None
-
-
 def parse_xml_file(path: str):
+    text = Path(path).read_text(encoding="utf-8")
+    text = re.sub(r'encoding="[^"]+"', 'encoding="UTF-8"', text, count=1)
+
     parser = etree.XMLParser(
-        recover=False,
+        recover=True,
+        huge_tree=True,
         resolve_entities=False,
         no_network=True,
     )
-    return etree.parse(str(Path(path)), parser=parser).getroot()
+    return etree.fromstring(text.encode("utf-8"), parser=parser)
 
 
 def extract_volume_data(root) -> dict:
@@ -155,7 +154,6 @@ def extract_work_data(tei_node, volume: Volume) -> dict:
         "note": "",
         "page_number": page_number,
         "date": date[:20],
-        "year": extract_year(date),
         "place": place[:50],
         "author": (author or volume.author)[:50],
         "language": language[:20],

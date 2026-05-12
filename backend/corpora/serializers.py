@@ -23,7 +23,6 @@ class WorkListSerializer(serializers.ModelSerializer):
             "author",
             "genre",
             "date",
-            "year",
             "place",
             "language",
             "page_number",

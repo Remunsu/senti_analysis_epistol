@@ -23,7 +23,6 @@ class Work(models.Model):
     page_number = models.IntegerField(null=True, blank=True)
 
     date = models.CharField(max_length=20, blank=True)
-    year = models.IntegerField(null=True, blank=True, db_index=True)
     place = models.CharField(max_length=50, blank=True)
 
     author = models.CharField(max_length=50, blank=True)

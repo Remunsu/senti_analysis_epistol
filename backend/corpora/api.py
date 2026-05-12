@@ -237,9 +237,9 @@ class WorkFilterMixin:
             if values:
                 queryset = queryset.filter(**{f"{field}__in": values})
 
-        year_query = self.build_year_query(params)
-        if year_query:
-            queryset = queryset.filter(year_query)
+        date_query = self.build_range_query("date", params)
+        if date_query:
+            queryset = queryset.filter(date_query)
 
         page_query = self.build_range_query("page_number", params, numeric=True)
         if page_query:
@@ -288,64 +288,6 @@ class WorkFilterMixin:
                 query |= range_query
 
         return query
-
-    def build_year_query(self, params):
-        exact_values = self.clean_year_values(params.getlist("date"))
-        range_values = params.getlist("date_range")
-        from_values = self.clean_year_values(params.getlist("date_from"))
-        to_values = self.clean_year_values(params.getlist("date_to"))
-
-        query = Q()
-
-        if exact_values:
-            query |= Q(year__in=exact_values)
-
-        for value in range_values:
-            if ".." not in value:
-                continue
-
-            from_value, to_value = value.split("..", 1)
-            range_query = self.make_year_range_query(from_value, to_value)
-
-            if range_query:
-                query |= range_query
-
-        max_length = max(len(from_values), len(to_values))
-
-        for index in range(max_length):
-            from_value = from_values[index] if index < len(from_values) else ""
-            to_value = to_values[index] if index < len(to_values) else ""
-            range_query = self.make_year_range_query(from_value, to_value)
-
-            if range_query:
-                query |= range_query
-
-        return query
-
-    def make_year_range_query(self, from_value, to_value):
-        from_values = self.clean_year_values([from_value])
-        to_values = self.clean_year_values([to_value])
-
-        range_query = Q()
-
-        if from_values:
-            range_query &= Q(year__gte=from_values[0])
-
-        if to_values:
-            range_query &= Q(year__lte=to_values[0])
-
-        return range_query
-
-    def clean_year_values(self, values):
-        years = []
-
-        for value in values:
-            match = re.search(r"\d{4}", str(value or ""))
-
-            if match:
-                years.append(int(match.group(0)))
-
-        return years
 
     def make_range_query(self, field: str, from_value, to_value, numeric: bool = False):
         from_values = self.clean_filter_values([from_value], numeric)
@@ -496,7 +438,6 @@ class SentimentAnalysisResultsView(APIView):
             "work__title",
             "work__author",
             "work__date",
-            "work__year",
             "work__genre",
             "work__place",
         ).annotate(
@@ -519,7 +460,7 @@ class SentimentAnalysisResultsView(APIView):
                     "title": result["work__title"],
                     "author": result["work__author"],
                     "date": result["work__date"],
-                    "year": result["work__year"],
+                    "year": self.extract_date_group_label(result["work__date"]),
                     "genre": result["work__genre"],
                     "place": result["work__place"],
                     "segments_count": result["segments_count"],
@@ -535,6 +476,19 @@ class SentimentAnalysisResultsView(APIView):
             )
 
         return summaries
+
+    def extract_date_group_label(self, date_value):
+        date_text = str(date_value or "").strip()
+
+        if not date_text:
+            return ""
+
+        if "/" in date_text:
+            return date_text
+
+        match = re.search(r"\d{4}", date_text)
+
+        return match.group(0) if match else date_text
 
     def build_totals(self, summaries):
         totals = {
@@ -677,12 +631,6 @@ class WorkViewSet(WorkFilterMixin, viewsets.ReadOnlyModelViewSet):
                 .values_list("date", flat=True)
                 .distinct()
                 .order_by("date")
-            ),
-            "years": list(
-                Work.objects.exclude(year__isnull=True)
-                .values_list("year", flat=True)
-                .distinct()
-                .order_by("year")
             ),
             "page_numbers": list(
                 Work.objects.exclude(page_number__isnull=True)
