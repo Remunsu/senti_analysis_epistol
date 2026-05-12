@@ -1,3 +1,4 @@
+import re
 import threading
 
 from django.db.models import Q
@@ -442,6 +443,10 @@ class SentimentAnalysisResultsView(APIView):
             "run": SentimentAnalysisRunSerializer(run).data,
             "summary": summary,
             "totals": self.build_totals(summary),
+            "charts": {
+                "years": self.build_grouped_summary(summary, "year"),
+                "places": self.build_grouped_summary(summary, "place"),
+            },
         })
 
     def get_run(self, run_id):
@@ -459,6 +464,7 @@ class SentimentAnalysisResultsView(APIView):
             "work__author",
             "work__date",
             "work__genre",
+            "work__place",
             "label",
         )
 
@@ -471,6 +477,8 @@ class SentimentAnalysisResultsView(APIView):
                     "author": result["work__author"],
                     "date": result["work__date"],
                     "genre": result["work__genre"],
+                    "place": result["work__place"],
+                    "year": self.extract_year(result["work__date"]),
                     "segments_count": 0,
                     "negative_count": 0,
                     "neutral_count": 0,
@@ -506,6 +514,14 @@ class SentimentAnalysisResultsView(APIView):
 
         return sorted(summaries, key=lambda item: item["work_id"])
 
+    def extract_year(self, date_value):
+        if not date_value:
+            return ""
+
+        match = re.search(r"\d{4}", str(date_value))
+
+        return match.group(0) if match else ""
+
     def build_totals(self, summaries):
         totals = {
             "total": 0,
@@ -521,6 +537,49 @@ class SentimentAnalysisResultsView(APIView):
             totals["positive"] += item["positive_count"]
 
         return totals
+
+    def build_grouped_summary(self, summaries, field):
+        groups = {}
+
+        for item in summaries:
+            label = item.get(field) or f"Без {'года' if field == 'year' else 'места'}"
+            group = groups.setdefault(
+                label,
+                {
+                    "label": label,
+                    "works_count": 0,
+                    "segments_count": 0,
+                    "negative_count": 0,
+                    "neutral_count": 0,
+                    "positive_count": 0,
+                    "score_sum": 0,
+                },
+            )
+
+            group["works_count"] += 1
+            group["segments_count"] += item["segments_count"]
+            group["negative_count"] += item["negative_count"]
+            group["neutral_count"] += item["neutral_count"]
+            group["positive_count"] += item["positive_count"]
+            group["score_sum"] += item["score_sum"]
+
+        grouped_items = []
+
+        for group in groups.values():
+            segments_count = group["segments_count"] or 1
+
+            grouped_items.append({
+                **group,
+                "mean_score": group["score_sum"] / segments_count,
+                "negative_share": group["negative_count"] / segments_count,
+                "neutral_share": group["neutral_count"] / segments_count,
+                "positive_share": group["positive_count"] / segments_count,
+            })
+
+        if field == "year":
+            return sorted(grouped_items, key=lambda item: item["label"])
+
+        return sorted(grouped_items, key=lambda item: (-item["segments_count"], item["label"]))
 
 
 class SentimentAnalysisRunsView(APIView):
