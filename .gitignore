@@ -4,6 +4,7 @@ dist/
 __pycache__/
 .env
 tei_volumes/
+models/
 
 # Logs
 logs

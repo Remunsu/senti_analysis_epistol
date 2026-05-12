@@ -41,16 +41,18 @@ def to_int(value: str):
         return None
 
 
+def extract_year(value: str):
+    match = re.search(r"\d{4}", value or "")
+    return int(match.group(0)) if match else None
+
+
 def parse_xml_file(path: str):
-    text = Path(path).read_text(encoding="utf-8")
-    text = re.sub(r'encoding="[^"]+"', 'encoding="UTF-8"', text, count=1)
-
-    parser = etree.XMLParser(recover=True, huge_tree=True)
-    return etree.fromstring(text.encode("utf-8"), parser=parser)
-
-
-def local_name(node) -> str:
-    return etree.QName(node).localname
+    parser = etree.XMLParser(
+        recover=False,
+        resolve_entities=False,
+        no_network=True,
+    )
+    return etree.parse(str(Path(path)), parser=parser).getroot()
 
 
 def extract_volume_data(root) -> dict:
@@ -153,6 +155,7 @@ def extract_work_data(tei_node, volume: Volume) -> dict:
         "note": "",
         "page_number": page_number,
         "date": date[:20],
+        "year": extract_year(date),
         "place": place[:50],
         "author": (author or volume.author)[:50],
         "language": language[:20],
@@ -196,35 +199,3 @@ def parse_volume(volume: Volume):
         created_works.append(create_work_from_tei(tei_node, volume))
 
     return created_works
-
-
-@transaction.atomic
-def parse_single_work(volume: Volume):
-    root = parse_xml_file(volume.xml_file.path)
-
-    if local_name(root) == "TEI":
-        tei_node = root
-    else:
-        tei_nodes = root.xpath(".//tei:TEI[tei:text]", namespaces=NS)
-        if not tei_nodes:
-            raise ValueError("В XML не найдено отдельное TEI-произведение")
-
-        tei_node = tei_nodes[0]
-
-    volume_data = extract_volume_data(tei_node)
-    work_preview = extract_work_data(tei_node, volume)
-
-    if not volume_data.get("title"):
-        volume_data["title"] = work_preview["title"] or work_preview["title_short"]
-
-    if not volume_data.get("title_short"):
-        volume_data["title_short"] = work_preview["title_short"] or work_preview["title"]
-
-    if not volume_data.get("author"):
-        volume_data["author"] = work_preview["author"]
-
-    apply_volume_data(volume, volume_data)
-
-    volume.works.all().delete()
-
-    return create_work_from_tei(tei_node, volume)

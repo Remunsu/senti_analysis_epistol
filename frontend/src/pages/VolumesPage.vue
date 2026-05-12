@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from "vue"
 import { RouterLink } from "vue-router"
+import { API_BASE_URL } from "../api"
 import PaginationControls from "../components/PaginationControls.vue"
 
 const volumes = ref([])
@@ -13,7 +14,6 @@ const nextPageUrl = ref(null)
 const previousPageUrl = ref(null)
 
 const pageSize = 50
-const API_BASE_URL = "http://127.0.0.1:8000/api"
 
 const totalPages = computed(() => {
   if (!totalCount.value) return 1

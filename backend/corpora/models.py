@@ -23,6 +23,7 @@ class Work(models.Model):
     page_number = models.IntegerField(null=True, blank=True)
 
     date = models.CharField(max_length=20, blank=True)
+    year = models.IntegerField(null=True, blank=True, db_index=True)
     place = models.CharField(max_length=50, blank=True)
 
     author = models.CharField(max_length=50, blank=True)
@@ -47,3 +48,72 @@ class Token(models.Model):
     text = models.CharField(max_length=20, blank=True)
     lemma = models.CharField(max_length=20, blank=True, db_index=True)
     pos = models.CharField(max_length=20, blank=True)
+
+
+class SentimentFragmentLabel(models.Model):
+    LABEL_CHOICES = [
+        ("-1", "Негативная"),
+        ("0", "Нейтральная"),
+        ("1", "Позитивная"),
+    ]
+
+    work = models.ForeignKey(Work, on_delete=models.CASCADE, related_name="sentiment_labels")
+
+    segment_index = models.IntegerField()
+    word_start = models.IntegerField()
+    word_end = models.IntegerField()
+    text = models.TextField()
+
+    label = models.CharField(max_length=20, choices=LABEL_CHOICES)
+    comment = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("work", "segment_index")
+        ordering = ["work", "segment_index"]
+
+
+class SentimentAnalysisRun(models.Model):
+    MODEL_KIND_CHOICES = [
+        ("rubert", "RuBERT"),
+    ]
+    STATUS_CHOICES = [
+        ("running", "Выполняется"),
+        ("completed", "Завершен"),
+        ("failed", "Ошибка"),
+    ]
+
+    model_kind = models.CharField(max_length=20, choices=MODEL_KIND_CHOICES, default="rubert")
+    model_name = models.CharField(max_length=200)
+    segment_size = models.IntegerField(default=50)
+    works_count = models.IntegerField(default=0)
+    results_count = models.IntegerField(default=0)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="completed")
+    error_message = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.model_name} ({self.created_at:%Y-%m-%d %H:%M})"
+
+
+class SentimentAnalysisResult(models.Model):
+    LABEL_CHOICES = SentimentFragmentLabel.LABEL_CHOICES
+
+    run = models.ForeignKey(SentimentAnalysisRun, on_delete=models.CASCADE, related_name="results")
+    work = models.ForeignKey(Work, on_delete=models.CASCADE, related_name="sentiment_results")
+
+    segment_index = models.IntegerField()
+    word_start = models.IntegerField()
+    word_end = models.IntegerField()
+    text = models.TextField()
+
+    label = models.CharField(max_length=20, choices=LABEL_CHOICES)
+    confidence = models.FloatField(default=0)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("run", "work", "segment_index")
+        ordering = ["run", "work", "segment_index"]

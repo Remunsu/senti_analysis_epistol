@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Volume, Work
+from .models import SentimentAnalysisRun, SentimentFragmentLabel, Volume, Work
 
 
 class VolumeSerializer(serializers.ModelSerializer):
@@ -23,6 +23,7 @@ class WorkListSerializer(serializers.ModelSerializer):
             "author",
             "genre",
             "date",
+            "year",
             "place",
             "language",
             "page_number",
@@ -34,4 +35,16 @@ class WorkDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Work
+        fields = "__all__"
+
+
+class SentimentFragmentLabelSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SentimentFragmentLabel
+        fields = "__all__"
+
+
+class SentimentAnalysisRunSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SentimentAnalysisRun
         fields = "__all__"

@@ -1,0 +1,53 @@
+from django.db import close_old_connections
+
+from .models import SentimentAnalysisResult, SentimentAnalysisRun, Work
+from .services.sentiment_analyzer import analyze_fragments, split_text_into_word_segments
+
+
+def run_sentiment_analysis(run_id, work_ids, segment_size):
+    close_old_connections()
+
+    try:
+        run = SentimentAnalysisRun.objects.get(id=run_id)
+        works = Work.objects.filter(id__in=work_ids).exclude(plain_text="").order_by("id")
+        results_count = 0
+
+        SentimentAnalysisResult.objects.filter(run=run).delete()
+
+        for work in works:
+            fragments = split_text_into_word_segments(work.plain_text, segment_size)
+            analysis_results = analyze_fragments(fragments)
+
+            result_objects = [
+                SentimentAnalysisResult(
+                    run=run,
+                    work=work,
+                    segment_index=result["segment_index"],
+                    word_start=result["word_start"],
+                    word_end=result["word_end"],
+                    text=result["text"],
+                    label=result["label"],
+                    confidence=result["confidence"],
+                )
+                for result in analysis_results
+            ]
+
+            SentimentAnalysisResult.objects.bulk_create(result_objects, batch_size=500)
+            results_count += len(result_objects)
+            SentimentAnalysisRun.objects.filter(id=run.id).update(results_count=results_count)
+    except Exception as exc:
+        SentimentAnalysisResult.objects.filter(run_id=run_id).delete()
+        SentimentAnalysisRun.objects.filter(id=run_id).update(
+            status="failed",
+            error_message=str(exc) or "Не удалось выполнить анализ",
+            results_count=0,
+        )
+        raise
+    else:
+        SentimentAnalysisRun.objects.filter(id=run_id).update(
+            status="completed",
+            results_count=results_count,
+            error_message="",
+        )
+    finally:
+        close_old_connections()

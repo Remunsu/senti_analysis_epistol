@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue"
 import { RouterLink, useRoute } from "vue-router"
+import { API_BASE_URL } from "../api"
 
 const route = useRoute()
 
@@ -8,8 +9,6 @@ const work = ref(null)
 const loading = ref(false)
 const error = ref("")
 const selectedSource = ref("text")
-
-const API_BASE_URL = "http://127.0.0.1:8000/api"
 
 const workId = computed(() => route.params.id)
 

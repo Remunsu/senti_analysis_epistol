@@ -1,5 +1,8 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import AnnotationPage from '../pages/AnnotationPage.vue'
 import NotFoundPage from '../pages/NotFoundPage.vue'
+import SentimentResultsPage from '../pages/SentimentResultsPage.vue'
+import SentimentRunsPage from '../pages/SentimentRunsPage.vue'
 import UploadPage from '../pages/UploadPage.vue'
 import VolumeDetailPage from '../pages/VolumeDetailPage.vue'
 import VolumesPage from '../pages/VolumesPage.vue'
@@ -33,6 +36,21 @@ const router = createRouter({
       path: '/upload',
       name: 'upload',
       component: UploadPage,
+    },
+    {
+      path: '/annotation',
+      name: 'annotation',
+      component: AnnotationPage,
+    },
+    {
+      path: '/sentiment/results',
+      name: 'sentiment-results',
+      component: SentimentRunsPage,
+    },
+    {
+      path: '/sentiment/results/:runId',
+      name: 'sentiment-result-detail',
+      component: SentimentResultsPage,
     },
     {
       path: '/:pathMatch(.*)*',
