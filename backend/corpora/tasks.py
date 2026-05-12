@@ -9,7 +9,7 @@ def run_sentiment_analysis(run_id, work_ids, segment_size):
 
     try:
         run = SentimentAnalysisRun.objects.get(id=run_id)
-        works = Work.objects.filter(id__in=work_ids).exclude(plain_text="").order_by("id")
+        works = Work.objects.filter(id__in=work_ids).exclude(plain_text="").only("id", "plain_text").order_by("id")
         results_count = 0
 
         SentimentAnalysisResult.objects.filter(run=run).delete()

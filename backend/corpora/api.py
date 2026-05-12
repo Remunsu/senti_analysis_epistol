@@ -318,9 +318,9 @@ class SentimentAnalysisView(WorkFilterMixin, APIView):
     def post(self, request):
         try:
             segment_size = self.get_segment_size(request.data.get("segment_size"))
-            works = self.get_selected_works(request.data)
+            work_ids = self.get_selected_work_ids(request.data)
 
-            if not works:
+            if not work_ids:
                 return Response(
                     {"detail": "Выберите произведения для анализа"},
                     status=status.HTTP_400_BAD_REQUEST,
@@ -330,7 +330,7 @@ class SentimentAnalysisView(WorkFilterMixin, APIView):
                 model_kind="rubert",
                 model_name=MODEL_DISPLAY_NAME,
                 segment_size=segment_size,
-                works_count=len(works),
+                works_count=len(work_ids),
                 status="running",
             )
         except Exception as exc:
@@ -338,8 +338,6 @@ class SentimentAnalysisView(WorkFilterMixin, APIView):
                 {"detail": str(exc) or "Не удалось запустить анализ"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-
-        work_ids = [work.id for work in works]
 
         try:
             task_id = async_task(
@@ -367,17 +365,17 @@ class SentimentAnalysisView(WorkFilterMixin, APIView):
             status=status.HTTP_202_ACCEPTED,
         )
 
-    def get_selected_works(self, data):
+    def get_selected_work_ids(self, data):
         queryset = Work.objects.exclude(plain_text="")
 
         if data.get("all_filtered"):
             params = QueryDict(data.get("filters_query", ""), mutable=False)
             queryset = self.apply_work_filters(queryset, params)
-            return list(queryset.order_by("id"))
+            return list(queryset.order_by("id").values_list("id", flat=True))
 
         work_ids = data.get("work_ids", [])
 
-        return list(queryset.filter(id__in=work_ids).order_by("id"))
+        return list(queryset.filter(id__in=work_ids).order_by("id").values_list("id", flat=True))
 
     def get_segment_size(self, raw_segment_size):
         try:
