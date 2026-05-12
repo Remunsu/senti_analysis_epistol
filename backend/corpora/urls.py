@@ -1,6 +1,7 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 from .api import (
+    SentimentAnalysisRunsView,
     SentimentAnalysisResultsView,
     SentimentAnalysisView,
     SentimentAnnotationTaskView,
@@ -16,6 +17,7 @@ router.register("works", WorkViewSet)
 urlpatterns = [
     path("annotations/task/", SentimentAnnotationTaskView.as_view()),
     path("sentiment/analyze/", SentimentAnalysisView.as_view()),
+    path("sentiment/runs/", SentimentAnalysisRunsView.as_view()),
     path("sentiment/results/", SentimentAnalysisResultsView.as_view()),
     path("sentiment/results/<int:run_id>/", SentimentAnalysisResultsView.as_view()),
     path("upload/", XMLUploadView.as_view()),

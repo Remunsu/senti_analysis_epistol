@@ -118,36 +118,12 @@ onMounted(() => {
 
       <section class="mb-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <div class="grid gap-4 md:grid-cols-[minmax(0,1fr)_180px_auto]">
-          <div>
-            <label class="mb-1 block text-sm font-medium text-slate-700">
-              Жанр содержит
-            </label>
-            <input
-              v-model="genre"
-              type="text"
-              class="w-full rounded-xl border border-slate-300 px-4 py-2 text-slate-900 outline-none focus:border-slate-500"
-            />
-          </div>
-
-          <div>
-            <label class="mb-1 block text-sm font-medium text-slate-700">
-              Слов в фрагменте
-            </label>
-            <input
-              v-model="segmentSize"
-              type="number"
-              min="10"
-              max="300"
-              class="w-full rounded-xl border border-slate-300 px-4 py-2 text-slate-900 outline-none focus:border-slate-500"
-            />
-          </div>
 
           <div class="flex items-end">
             <button
               @click="fetchTask"
               :disabled="loading || saving"
-              class="w-full rounded-xl border border-slate-300 px-5 py-2 font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 md:w-auto"
-            >
+              class="w-full rounded-xl border border-slate-300 px-5 py-2 font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 md:w-auto">
               Следующее письмо
             </button>
           </div>

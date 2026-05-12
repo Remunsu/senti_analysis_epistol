@@ -50,6 +50,22 @@ function scheduleResultsPolling() {
   }, 2500)
 }
 
+async function readApiResponse(response, fallbackMessage) {
+  const contentType = response.headers.get("content-type") || ""
+
+  if (contentType.includes("application/json")) {
+    return response.json()
+  }
+
+  const text = await response.text()
+
+  return {
+    detail: text
+      ? `${fallbackMessage}. Сервер вернул не JSON-ответ.`
+      : fallbackMessage,
+  }
+}
+
 async function fetchResults({ silent = false } = {}) {
   if (!silent) {
     loading.value = true
@@ -63,7 +79,7 @@ async function fetchResults({ silent = false } = {}) {
 
   try {
     const response = await fetch(url)
-    const data = await response.json()
+    const data = await readApiResponse(response, "Не удалось загрузить результаты анализа")
 
     if (!response.ok) {
       throw new Error(data.detail || "Не удалось загрузить результаты анализа")
@@ -126,10 +142,10 @@ onUnmounted(() => {
         </div>
 
         <RouterLink
-          to="/"
+          :to="{ name: 'sentiment-results' }"
           class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
         >
-          К произведениям
+          К списку анализов
         </RouterLink>
       </div>
 

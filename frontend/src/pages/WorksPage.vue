@@ -38,6 +38,8 @@ const pageSize = 50
 let nextFilterId = 1
 
 const API_BASE_URL = "http://127.0.0.1:8000/api"
+const STORAGE_KEY = "sentiment-app:works-page-state"
+let orderingWatcherReady = false
 
 const filterFields = [
   { key: "volume", label: "Том" },
@@ -82,6 +84,7 @@ const allCurrentPageSelected = computed(() => {
 function clearSelection() {
   selectedWorkIds.value = new Set()
   allFilteredSelected.value = false
+  savePageState()
 }
 
 function normalizeAutocompleteValue(value) {
@@ -132,6 +135,10 @@ function isRangeFilter(fieldInput) {
   return field ? rangeFilterKeys.has(field.key) : false
 }
 
+function isPageRangeFilter(fieldInput) {
+  return getFilterField(fieldInput)?.key === "page_number"
+}
+
 function resolveFilterInput(fieldInput, value) {
   const rawValue = String(value || "").trim()
   const normalizedValue = normalizeAutocompleteValue(rawValue)
@@ -145,10 +152,27 @@ function resolveFilterInput(fieldInput, value) {
   return option ? option.value : rawValue
 }
 
+async function readApiResponse(response, fallbackMessage) {
+  const contentType = response.headers.get("content-type") || ""
+
+  if (contentType.includes("application/json")) {
+    return response.json()
+  }
+
+  const text = await response.text()
+
+  return {
+    detail: text
+      ? `${fallbackMessage}. Сервер вернул не JSON-ответ.`
+      : fallbackMessage,
+  }
+}
+
 function resetFilterRowValues(row) {
   row.value = ""
   row.from = ""
   row.to = ""
+  savePageState()
 }
 
 function addFilterRow() {
@@ -160,14 +184,62 @@ function addFilterRow() {
     to: "",
   })
   nextFilterId += 1
+  savePageState()
 }
 
 function removeFilterRow(filterId) {
   filterRows.value = filterRows.value.filter((row) => row.id !== filterId)
+  savePageState()
 }
 
 function clearFilterRows() {
   filterRows.value = []
+  savePageState()
+}
+
+function savePageState() {
+  const state = {
+    search: search.value,
+    ordering: ordering.value,
+    filterRows: filterRows.value,
+    currentPage: currentPage.value,
+    totalCount: totalCount.value,
+    nextPageUrl: nextPageUrl.value,
+    previousPageUrl: previousPageUrl.value,
+    selectedWorkIds: [...selectedWorkIds.value],
+    allFilteredSelected: allFilteredSelected.value,
+    works: works.value,
+  }
+
+  sessionStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+}
+
+function restorePageState() {
+  const rawState = sessionStorage.getItem(STORAGE_KEY)
+
+  if (!rawState) return false
+
+  try {
+    const state = JSON.parse(rawState)
+    const restoredFilterRows = Array.isArray(state.filterRows) ? state.filterRows : []
+
+    search.value = state.search || ""
+    ordering.value = state.ordering || "id"
+    filterRows.value = restoredFilterRows
+    currentPage.value = Number(state.currentPage) || 1
+    totalCount.value = Number(state.totalCount) || 0
+    nextPageUrl.value = state.nextPageUrl || null
+    previousPageUrl.value = state.previousPageUrl || null
+    selectedWorkIds.value = new Set(Array.isArray(state.selectedWorkIds) ? state.selectedWorkIds : [])
+    allFilteredSelected.value = Boolean(state.allFilteredSelected)
+    works.value = Array.isArray(state.works) ? state.works : []
+    nextFilterId = restoredFilterRows.reduce((maxId, row) => Math.max(maxId, Number(row.id) || 0), 0) + 1
+
+    return true
+  } catch {
+    sessionStorage.removeItem(STORAGE_KEY)
+    return false
+  }
 }
 
 async function fetchVolumes() {
@@ -220,6 +292,8 @@ async function fetchWorks(page = 1) {
       previousPageUrl.value = data.previous
       currentPage.value = page
     }
+
+    savePageState()
   } catch (err) {
     error.value = err.message || "Неизвестная ошибка"
   } finally {
@@ -288,13 +362,13 @@ async function analyzeSelectedWorks() {
         segment_size: 50,
       }),
     })
-    const data = await response.json()
+    const data = await readApiResponse(response, "Не удалось выполнить анализ")
 
     if (!response.ok) {
       throw new Error(data.detail || "Не удалось выполнить анализ")
     }
 
-    router.push({ name: "sentiment-results", params: { runId: data.run.id } })
+    router.push({ name: "sentiment-result-detail", params: { runId: data.run.id } })
   } catch (err) {
     error.value = err.message || "Неизвестная ошибка"
   } finally {
@@ -330,6 +404,7 @@ function toggleWorkSelection(workId) {
   }
 
   selectedWorkIds.value = nextSelectedIds
+  savePageState()
 }
 
 function toggleCurrentPageSelection() {
@@ -344,6 +419,7 @@ function toggleCurrentPageSelection() {
   }
 
   selectedWorkIds.value = nextSelectedIds
+  savePageState()
 }
 
 function toggleAllFilteredWorks() {
@@ -360,6 +436,7 @@ function selectAllFilteredWorks() {
 
   selectedWorkIds.value = new Set()
   allFilteredSelected.value = true
+  savePageState()
 }
 
 function goToPage(page) {
@@ -381,16 +458,32 @@ function goToNextPage() {
 }
 
 watch(ordering, () => {
+  if (!orderingWatcherReady) {
+    savePageState()
+    return
+  }
+
   applyFilters()
 })
 
+watch(search, () => {
+  savePageState()
+})
+
+watch(filterRows, () => {
+  savePageState()
+}, { deep: true })
+
 onMounted(async () => {
   try {
+    const restored = restorePageState()
     await fetchVolumes()
     await fetchFilterOptions()
-    await fetchWorks(1)
+    await fetchWorks(restored ? currentPage.value : 1)
+    orderingWatcherReady = true
   } catch (err) {
     error.value = err.message || "Неизвестная ошибка"
+    orderingWatcherReady = true
   }
 })
 </script>
@@ -477,11 +570,13 @@ onMounted(async () => {
                   <label class="mb-1 block text-sm font-medium text-slate-700">
                     От
                   </label>
-                  <AutocompleteInput
+                  <input
                     v-model="row.from"
-                    :options="getFilterValueOptions(row.field)"
+                    :type="isPageRangeFilter(row.field) ? 'number' : 'text'"
+                    :inputmode="isPageRangeFilter(row.field) ? 'numeric' : 'text'"
                     placeholder="Начало диапазона"
                     aria-label="Начало диапазона фильтра"
+                    class="w-full rounded-xl border border-slate-300 px-4 py-2 text-slate-900 outline-none focus:border-slate-500"
                   />
                 </div>
 
@@ -489,11 +584,13 @@ onMounted(async () => {
                   <label class="mb-1 block text-sm font-medium text-slate-700">
                     До
                   </label>
-                  <AutocompleteInput
+                  <input
                     v-model="row.to"
-                    :options="getFilterValueOptions(row.field)"
+                    :type="isPageRangeFilter(row.field) ? 'number' : 'text'"
+                    :inputmode="isPageRangeFilter(row.field) ? 'numeric' : 'text'"
                     placeholder="Конец диапазона"
                     aria-label="Конец диапазона фильтра"
+                    class="w-full rounded-xl border border-slate-300 px-4 py-2 text-slate-900 outline-none focus:border-slate-500"
                   />
                 </div>
               </div>
@@ -520,24 +617,18 @@ onMounted(async () => {
               </div>
             </div>
           </div>
-
-          <p v-else class="text-sm text-slate-500">
-            Фильтры не добавлены
-          </p>
         </div>
 
         <div class="mt-4 flex flex-wrap gap-3">
           <button
             @click="applyFilters"
-            class="rounded-xl bg-slate-900 px-5 py-2 font-medium text-white hover:bg-slate-700"
-          >
+            class="rounded-xl bg-slate-900 px-5 py-2 font-medium text-white hover:bg-slate-700">
             Найти
           </button>
 
           <button
             @click="resetFilters"
-            class="rounded-xl border border-slate-300 px-5 py-2 font-medium text-slate-700 hover:bg-slate-100"
-          >
+            class="rounded-xl border border-slate-300 px-5 py-2 font-medium text-slate-700 hover:bg-slate-100">
             Сбросить
           </button>
         </div>
@@ -559,11 +650,9 @@ onMounted(async () => {
           </div>
 
           <p v-if="loading" class="text-sm text-slate-500">
-            Обновление таблицы...
+            Обновление...
           </p>
-        </div>
-
-        <div class="flex flex-wrap items-center gap-3 border-b border-slate-200 px-5 py-3">
+          
           <button
             @click="analyzeSelectedWorks"
             :disabled="selectedWorksCount === 0 || analyzing"
@@ -571,10 +660,6 @@ onMounted(async () => {
           >
             {{ analyzing ? "Анализирую..." : "Анализировать выбранные" }}
           </button>
-
-          <p class="text-sm text-slate-600">
-            Анализ идёт фрагментами по 50 слов.
-          </p>
         </div>
 
         <WorksTable

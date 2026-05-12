@@ -304,22 +304,28 @@ class SentimentAnalysisView(WorkFilterMixin, APIView):
     default_segment_size = 50
 
     def post(self, request):
-        segment_size = self.get_segment_size(request.data.get("segment_size"))
-        works = self.get_selected_works(request.data)
+        try:
+            segment_size = self.get_segment_size(request.data.get("segment_size"))
+            works = self.get_selected_works(request.data)
 
-        if not works:
-            return Response(
-                {"detail": "Выберите произведения для анализа"},
-                status=status.HTTP_400_BAD_REQUEST,
+            if not works:
+                return Response(
+                    {"detail": "Выберите произведения для анализа"},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            run = SentimentAnalysisRun.objects.create(
+                model_kind="rubert",
+                model_name=MODEL_DISPLAY_NAME,
+                segment_size=segment_size,
+                works_count=len(works),
+                status="running",
             )
-
-        run = SentimentAnalysisRun.objects.create(
-            model_kind="rubert",
-            model_name=MODEL_DISPLAY_NAME,
-            segment_size=segment_size,
-            works_count=len(works),
-            status="running",
-        )
+        except Exception as exc:
+            return Response(
+                {"detail": str(exc) or "Не удалось запустить анализ"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
         work_ids = [work.id for work in works]
         analysis_thread = threading.Thread(
@@ -409,22 +415,28 @@ class SentimentAnalysisView(WorkFilterMixin, APIView):
 
 class SentimentAnalysisResultsView(APIView):
     def get(self, request, run_id=None):
-        run = self.get_run(run_id)
+        try:
+            run = self.get_run(run_id)
 
-        if not run:
-            return Response(
-                {"detail": "Результаты анализа не найдены"},
-                status=status.HTTP_404_NOT_FOUND,
+            if not run:
+                return Response(
+                    {"detail": "Результаты анализа не найдены"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+            results = (
+                SentimentAnalysisResult.objects
+                .select_related("work")
+                .filter(run=run)
+                .order_by("work_id")
             )
 
-        results = (
-            SentimentAnalysisResult.objects
-            .select_related("work")
-            .filter(run=run)
-            .order_by("work_id")
-        )
-
-        summary = self.build_summary(results)
+            summary = self.build_summary(results)
+        except Exception as exc:
+            return Response(
+                {"detail": str(exc) or "Не удалось загрузить результаты анализа"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
         return Response({
             "run": SentimentAnalysisRunSerializer(run).data,
@@ -509,6 +521,15 @@ class SentimentAnalysisResultsView(APIView):
             totals["positive"] += item["positive_count"]
 
         return totals
+
+
+class SentimentAnalysisRunsView(APIView):
+    def get(self, request):
+        runs = SentimentAnalysisRun.objects.order_by("-created_at")
+
+        return Response({
+            "results": SentimentAnalysisRunSerializer(runs, many=True).data,
+        })
 
 
 class WorkViewSet(WorkFilterMixin, viewsets.ReadOnlyModelViewSet):
