@@ -1,11 +1,12 @@
 from django.db.models import Q
+from django.db import transaction
 from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework import viewsets, filters 
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.decorators import action
-from .models import Volume, Work
+from .models import SentimentFragmentLabel, Volume, Work
 from .serializers import VolumeSerializer, WorkListSerializer, WorkDetailSerializer
 from .services.tei_parser import parse_single_work, parse_volume
 
@@ -79,6 +80,128 @@ class XMLUploadView(APIView):
             xml_file.name.lower().endswith(".xml") or
             xml_file.content_type in self.allowed_content_types
         )
+
+
+class SentimentAnnotationTaskView(APIView):
+    default_genre = "письм"
+    default_segment_size = 50
+
+    def get(self, request):
+        genre = request.query_params.get("genre", self.default_genre)
+        segment_size = self.get_segment_size(request)
+
+        work = (
+            Work.objects.select_related("volume")
+            .filter(genre__icontains=genre)
+            .exclude(plain_text="")
+            .filter(sentiment_labels__isnull=True)
+            .order_by("id")
+            .first()
+        )
+
+        if not work:
+            return Response(
+                {"detail": "Нет неразмеченных писем для выбранного жанра"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        return Response({
+            "work": WorkDetailSerializer(work).data,
+            "segment_size": segment_size,
+            "fragments": self.build_fragments(work.plain_text, segment_size),
+        })
+
+    @transaction.atomic
+    def post(self, request):
+        work_id = request.data.get("work_id")
+        fragments = request.data.get("fragments", [])
+
+        if not work_id:
+            return Response(
+                {"detail": "Не указан work_id"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not fragments:
+            return Response(
+                {"detail": "Нет фрагментов для сохранения"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        work = Work.objects.filter(id=work_id).first()
+
+        if not work:
+            return Response(
+                {"detail": "Произведение не найдено"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        invalid_fragment = next(
+            (
+                fragment for fragment in fragments
+                if fragment.get("label") not in dict(SentimentFragmentLabel.LABEL_CHOICES)
+            ),
+            None,
+        )
+
+        if invalid_fragment:
+            return Response(
+                {"detail": "Укажите тональность для каждого фрагмента"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        SentimentFragmentLabel.objects.filter(work=work).delete()
+
+        labels = [
+            SentimentFragmentLabel(
+                work=work,
+                segment_index=fragment["segment_index"],
+                word_start=fragment["word_start"],
+                word_end=fragment["word_end"],
+                text=fragment["text"],
+                label=fragment["label"],
+                comment=fragment.get("comment", ""),
+            )
+            for fragment in fragments
+        ]
+
+        SentimentFragmentLabel.objects.bulk_create(labels)
+
+        return Response({
+            "work_id": work.id,
+            "saved": len(labels),
+        }, status=status.HTTP_201_CREATED)
+
+    def get_segment_size(self, request):
+        raw_segment_size = request.query_params.get("segment_size", self.default_segment_size)
+
+        try:
+            segment_size = int(raw_segment_size)
+        except (TypeError, ValueError):
+            return self.default_segment_size
+
+        if segment_size < 10 or segment_size > 300:
+            return self.default_segment_size
+
+        return segment_size
+
+    def build_fragments(self, text: str, segment_size: int):
+        words = text.split()
+        fragments = []
+
+        for segment_index, start in enumerate(range(0, len(words), segment_size)):
+            end = min(start + segment_size, len(words))
+
+            fragments.append({
+                "segment_index": segment_index,
+                "word_start": start,
+                "word_end": end,
+                "text": " ".join(words[start:end]),
+                "label": "",
+                "comment": "",
+            })
+
+        return fragments
 
 
 class WorkViewSet(viewsets.ReadOnlyModelViewSet):

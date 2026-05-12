@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import AnnotationPage from '../pages/AnnotationPage.vue'
 import NotFoundPage from '../pages/NotFoundPage.vue'
 import UploadPage from '../pages/UploadPage.vue'
 import VolumeDetailPage from '../pages/VolumeDetailPage.vue'
@@ -33,6 +34,11 @@ const router = createRouter({
       path: '/upload',
       name: 'upload',
       component: UploadPage,
+    },
+    {
+      path: '/annotation',
+      name: 'annotation',
+      component: AnnotationPage,
     },
     {
       path: '/:pathMatch(.*)*',

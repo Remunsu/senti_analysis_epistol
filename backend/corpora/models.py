@@ -47,3 +47,27 @@ class Token(models.Model):
     text = models.CharField(max_length=20, blank=True)
     lemma = models.CharField(max_length=20, blank=True, db_index=True)
     pos = models.CharField(max_length=20, blank=True)
+
+
+class SentimentFragmentLabel(models.Model):
+    LABEL_CHOICES = [
+        ("-1", "Негативная"),
+        ("0", "Нейтральная"),
+        ("1", "Позитивная"),
+    ]
+
+    work = models.ForeignKey(Work, on_delete=models.CASCADE, related_name="sentiment_labels")
+
+    segment_index = models.IntegerField()
+    word_start = models.IntegerField()
+    word_end = models.IntegerField()
+    text = models.TextField()
+
+    label = models.CharField(max_length=20, choices=LABEL_CHOICES)
+    comment = models.TextField(blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("work", "segment_index")
+        ordering = ["work", "segment_index"]

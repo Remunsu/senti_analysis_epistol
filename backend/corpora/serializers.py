@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Volume, Work
+from .models import SentimentFragmentLabel, Volume, Work
 
 
 class VolumeSerializer(serializers.ModelSerializer):
@@ -34,4 +34,10 @@ class WorkDetailSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Work
+        fields = "__all__"
+
+
+class SentimentFragmentLabelSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SentimentFragmentLabel
         fields = "__all__"

@@ -21,7 +21,7 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(["toggle-work", "toggle-page"])
+const emit = defineEmits(["toggle-work", "toggle-all-filtered"])
 
 const pageWorkIds = computed(() => props.works.map((work) => work.id))
 
@@ -29,14 +29,6 @@ const selectedOnPageCount = computed(() => {
   if (props.allFilteredSelected) return props.works.length
 
   return pageWorkIds.value.filter((id) => props.selectedIds.has(id)).length
-})
-
-const allPageSelected = computed(() => {
-  return props.works.length > 0 && selectedOnPageCount.value === props.works.length
-})
-
-const pageSelectionIndeterminate = computed(() => {
-  return selectedOnPageCount.value > 0 && selectedOnPageCount.value < props.works.length
 })
 
 function isWorkSelected(workId) {
@@ -52,12 +44,12 @@ function isWorkSelected(workId) {
           <th class="w-12 px-5 py-3">
             <input
               type="checkbox"
-              :checked="allPageSelected"
-              :indeterminate="pageSelectionIndeterminate"
-              :disabled="works.length === 0 || allFilteredSelected"
+              :checked="allFilteredSelected"
+              :indeterminate="!allFilteredSelected && selectedOnPageCount > 0"
+              :disabled="works.length === 0"
               class="h-4 w-4 rounded border-slate-300 text-slate-900 accent-slate-900 disabled:cursor-not-allowed disabled:opacity-50"
-              aria-label="Выбрать работы на странице"
-              @change="emit('toggle-page')"
+              aria-label="Выбрать все найденные работы"
+              @change="emit('toggle-all-filtered')"
             />
           </th>
           <th class="w-[45%] px-5 py-3 font-semibold">Название</th>

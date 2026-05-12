@@ -295,6 +295,15 @@ function toggleCurrentPageSelection() {
   selectedWorkIds.value = nextSelectedIds
 }
 
+function toggleAllFilteredWorks() {
+  if (allFilteredSelected.value) {
+    clearSelection()
+    return
+  }
+
+  selectAllFilteredWorks()
+}
+
 function selectAllFilteredWorks() {
   if (!totalCount.value) return
 
@@ -509,7 +518,7 @@ onMounted(async () => {
           :selected-ids="selectedWorkIds"
           :all-filtered-selected="allFilteredSelected"
           @toggle-work="toggleWorkSelection"
-          @toggle-page="toggleCurrentPageSelection"
+          @toggle-all-filtered="toggleAllFilteredWorks"
         />
 
         <PaginationControls

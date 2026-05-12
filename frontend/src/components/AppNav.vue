@@ -31,6 +31,13 @@ import { RouterLink } from "vue-router"
         >
           Загрузка XML
         </RouterLink>
+        <RouterLink
+          to="/annotation"
+          class="rounded-lg px-3 py-2 font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+          active-class="bg-slate-900 text-white hover:bg-slate-900 hover:text-white"
+        >
+          Разметка
+        </RouterLink>
       </nav>
     </div>
   </header>
