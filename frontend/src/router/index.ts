@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import AnnotationPage from '../pages/AnnotationPage.vue'
 import NotFoundPage from '../pages/NotFoundPage.vue'
+import SentimentResultsPage from '../pages/SentimentResultsPage.vue'
 import UploadPage from '../pages/UploadPage.vue'
 import VolumeDetailPage from '../pages/VolumeDetailPage.vue'
 import VolumesPage from '../pages/VolumesPage.vue'
@@ -39,6 +40,11 @@ const router = createRouter({
       path: '/annotation',
       name: 'annotation',
       component: AnnotationPage,
+    },
+    {
+      path: '/sentiment/results/:runId?',
+      name: 'sentiment-results',
+      component: SentimentResultsPage,
     },
     {
       path: '/:pathMatch(.*)*',

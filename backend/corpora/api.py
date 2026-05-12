@@ -1,14 +1,23 @@
+import threading
+
 from django.db.models import Q
-from django.db import transaction
+from django.db import close_old_connections, transaction
+from django.http import QueryDict
 from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework import viewsets, filters 
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.decorators import action
-from .models import SentimentFragmentLabel, Volume, Work
-from .serializers import VolumeSerializer, WorkListSerializer, WorkDetailSerializer
-from .services.tei_parser import parse_single_work, parse_volume
+from .models import SentimentAnalysisResult, SentimentAnalysisRun, SentimentFragmentLabel, Volume, Work
+from .serializers import (
+    SentimentAnalysisRunSerializer,
+    VolumeSerializer,
+    WorkListSerializer,
+    WorkDetailSerializer,
+)
+from .services.sentiment_analyzer import MODEL_DISPLAY_NAME, analyze_fragments, split_text_into_word_segments
+from .services.tei_parser import parse_volume
 
 
 class VolumeViewSet(viewsets.ReadOnlyModelViewSet):
@@ -21,12 +30,12 @@ class XMLUploadView(APIView):
     allowed_content_types = {"text/xml", "application/xml"}
 
     def post(self, request):
-        upload_mode = request.data.get("mode")
+        upload_mode = request.data.get("mode", "volume")
         xml_files = request.FILES.getlist("files") or request.FILES.getlist("file")
 
-        if upload_mode not in {"volume", "work"}:
+        if upload_mode != "volume":
             return Response(
-                {"detail": "Укажите режим загрузки: volume или work"},
+                {"detail": "Загрузка одного произведения отключена. Загружайте XML тома."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -51,11 +60,7 @@ class XMLUploadView(APIView):
             for xml_file in xml_files:
                 volume = Volume.objects.create(xml_file=xml_file)
                 created_volumes.append(volume)
-
-                if upload_mode == "volume":
-                    created_works.extend(parse_volume(volume))
-                else:
-                    created_works.append(parse_single_work(volume))
+                created_works.extend(parse_volume(volume))
         except Exception as exc:
             for volume in created_volumes:
                 volume.delete()
@@ -204,30 +209,7 @@ class SentimentAnnotationTaskView(APIView):
         return fragments
 
 
-class WorkViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Work.objects.select_related("volume").all().order_by("id")
-
-    filter_backends = [
-        filters.SearchFilter,
-        filters.OrderingFilter,
-    ]
-
-    search_fields = [
-        "title",
-        "title_short",
-        "title_desc",
-        "plain_text",
-    ]
-
-    ordering_fields = [
-        "id",
-        "title",
-        "author",
-        "genre",
-        "date",
-        "page_number",
-    ]
-
+class WorkFilterMixin:
     multi_value_filter_fields = [
         "volume",
         "author",
@@ -236,10 +218,7 @@ class WorkViewSet(viewsets.ReadOnlyModelViewSet):
         "place",
     ]
 
-    def get_queryset(self):
-        queryset = super().get_queryset()
-        params = self.request.query_params
-
+    def apply_work_filters(self, queryset, params):
         for field in self.multi_value_filter_fields:
             values = [value for value in params.getlist(field) if value != ""]
 
@@ -253,6 +232,15 @@ class WorkViewSet(viewsets.ReadOnlyModelViewSet):
         page_query = self.build_range_query("page_number", params, numeric=True)
         if page_query:
             queryset = queryset.filter(page_query)
+
+        search_value = params.get("search", "")
+        if search_value:
+            queryset = queryset.filter(
+                Q(title__icontains=search_value) |
+                Q(title_short__icontains=search_value) |
+                Q(title_desc__icontains=search_value) |
+                Q(plain_text__icontains=search_value)
+            )
 
         return queryset
 
@@ -310,6 +298,246 @@ class WorkViewSet(viewsets.ReadOnlyModelViewSet):
             return cleaned_values
 
         return [value for value in cleaned_values if str(value).isdigit()]
+
+
+class SentimentAnalysisView(WorkFilterMixin, APIView):
+    default_segment_size = 50
+
+    def post(self, request):
+        segment_size = self.get_segment_size(request.data.get("segment_size"))
+        works = self.get_selected_works(request.data)
+
+        if not works:
+            return Response(
+                {"detail": "Выберите произведения для анализа"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        run = SentimentAnalysisRun.objects.create(
+            model_kind="rubert",
+            model_name=MODEL_DISPLAY_NAME,
+            segment_size=segment_size,
+            works_count=len(works),
+            status="running",
+        )
+
+        work_ids = [work.id for work in works]
+        analysis_thread = threading.Thread(
+            target=self.run_analysis,
+            args=(run.id, work_ids, segment_size),
+            daemon=True,
+        )
+        analysis_thread.start()
+
+        return Response(
+            {
+                "run": SentimentAnalysisRunSerializer(run).data,
+                "results_count": 0,
+            },
+            status=status.HTTP_202_ACCEPTED,
+        )
+
+    @staticmethod
+    def run_analysis(run_id, work_ids, segment_size):
+        close_old_connections()
+
+        try:
+            run = SentimentAnalysisRun.objects.get(id=run_id)
+            works = Work.objects.filter(id__in=work_ids).exclude(plain_text="").order_by("id")
+            results_count = 0
+
+            for work in works:
+                fragments = split_text_into_word_segments(work.plain_text, segment_size)
+                analysis_results = analyze_fragments(fragments)
+
+                result_objects = [
+                    SentimentAnalysisResult(
+                        run=run,
+                        work=work,
+                        segment_index=result["segment_index"],
+                        word_start=result["word_start"],
+                        word_end=result["word_end"],
+                        text=result["text"],
+                        label=result["label"],
+                        confidence=result["confidence"],
+                    )
+                    for result in analysis_results
+                ]
+
+                SentimentAnalysisResult.objects.bulk_create(result_objects, batch_size=500)
+                results_count += len(result_objects)
+                SentimentAnalysisRun.objects.filter(id=run.id).update(results_count=results_count)
+        except Exception as exc:
+            SentimentAnalysisResult.objects.filter(run_id=run_id).delete()
+            SentimentAnalysisRun.objects.filter(id=run_id).update(
+                status="failed",
+                error_message=str(exc) or "Не удалось выполнить анализ",
+                results_count=0,
+            )
+        else:
+            SentimentAnalysisRun.objects.filter(id=run_id).update(
+                status="completed",
+                results_count=results_count,
+            )
+        finally:
+            close_old_connections()
+
+
+    def get_selected_works(self, data):
+        queryset = Work.objects.exclude(plain_text="")
+
+        if data.get("all_filtered"):
+            params = QueryDict(data.get("filters_query", ""), mutable=False)
+            queryset = self.apply_work_filters(queryset, params)
+            return list(queryset.order_by("id"))
+
+        work_ids = data.get("work_ids", [])
+
+        return list(queryset.filter(id__in=work_ids).order_by("id"))
+
+    def get_segment_size(self, raw_segment_size):
+        try:
+            segment_size = int(raw_segment_size or self.default_segment_size)
+        except (TypeError, ValueError):
+            return self.default_segment_size
+
+        if segment_size < 10 or segment_size > 300:
+            return self.default_segment_size
+
+        return segment_size
+
+
+class SentimentAnalysisResultsView(APIView):
+    def get(self, request, run_id=None):
+        run = self.get_run(run_id)
+
+        if not run:
+            return Response(
+                {"detail": "Результаты анализа не найдены"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        results = (
+            SentimentAnalysisResult.objects
+            .select_related("work")
+            .filter(run=run)
+            .order_by("work_id")
+        )
+
+        summary = self.build_summary(results)
+
+        return Response({
+            "run": SentimentAnalysisRunSerializer(run).data,
+            "summary": summary,
+            "totals": self.build_totals(summary),
+        })
+
+    def get_run(self, run_id):
+        if run_id:
+            return SentimentAnalysisRun.objects.filter(id=run_id).first()
+
+        return SentimentAnalysisRun.objects.order_by("-created_at").first()
+
+    def build_summary(self, results):
+        by_work = {}
+
+        result_rows = results.values(
+            "work_id",
+            "work__title",
+            "work__author",
+            "work__date",
+            "work__genre",
+            "label",
+        )
+
+        for result in result_rows:
+            work_summary = by_work.setdefault(
+                result["work_id"],
+                {
+                    "work_id": result["work_id"],
+                    "title": result["work__title"],
+                    "author": result["work__author"],
+                    "date": result["work__date"],
+                    "genre": result["work__genre"],
+                    "segments_count": 0,
+                    "negative_count": 0,
+                    "neutral_count": 0,
+                    "positive_count": 0,
+                    "score_sum": 0,
+                },
+            )
+            score = int(result["label"])
+
+            work_summary["segments_count"] += 1
+            work_summary["score_sum"] += score
+
+            if score < 0:
+                work_summary["negative_count"] += 1
+            elif score > 0:
+                work_summary["positive_count"] += 1
+            else:
+                work_summary["neutral_count"] += 1
+
+        summaries = []
+
+        for work_summary in by_work.values():
+            segments_count = work_summary["segments_count"] or 1
+            mean_score = work_summary["score_sum"] / segments_count
+
+            summaries.append({
+                **work_summary,
+                "mean_score": mean_score,
+                "negative_share": work_summary["negative_count"] / segments_count,
+                "neutral_share": work_summary["neutral_count"] / segments_count,
+                "positive_share": work_summary["positive_count"] / segments_count,
+            })
+
+        return sorted(summaries, key=lambda item: item["work_id"])
+
+    def build_totals(self, summaries):
+        totals = {
+            "total": 0,
+            "negative": 0,
+            "neutral": 0,
+            "positive": 0,
+        }
+
+        for item in summaries:
+            totals["total"] += item["segments_count"]
+            totals["negative"] += item["negative_count"]
+            totals["neutral"] += item["neutral_count"]
+            totals["positive"] += item["positive_count"]
+
+        return totals
+
+
+class WorkViewSet(WorkFilterMixin, viewsets.ReadOnlyModelViewSet):
+    queryset = Work.objects.select_related("volume").all().order_by("id")
+
+    filter_backends = [
+        filters.SearchFilter,
+        filters.OrderingFilter,
+    ]
+
+    search_fields = [
+        "title",
+        "title_short",
+        "title_desc",
+        "plain_text",
+    ]
+
+    ordering_fields = [
+        "id",
+        "title",
+        "author",
+        "genre",
+        "date",
+        "page_number",
+    ]
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        return self.apply_work_filters(queryset, self.request.query_params)
 
     def get_serializer_class(self):
         if self.action == "list":

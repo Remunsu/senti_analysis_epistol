@@ -1,8 +1,11 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue"
+import { useRouter } from "vue-router"
 import AutocompleteInput from "../components/AutocompleteInput.vue"
 import PaginationControls from "../components/PaginationControls.vue"
 import WorksTable from "../components/WorksTable.vue"
+
+const router = useRouter()
 
 const works = ref([])
 const volumes = ref([])
@@ -21,6 +24,7 @@ const ordering = ref("id")
 const filterRows = ref([])
 
 const loading = ref(false)
+const analyzing = ref(false)
 const error = ref("")
 
 const currentPage = ref(1)
@@ -192,35 +196,7 @@ async function fetchWorks(page = 1) {
   loading.value = true
   error.value = ""
 
-  const params = new URLSearchParams()
-
-  params.append("page", page)
-
-  if (search.value) params.append("search", search.value)
-  if (ordering.value) params.append("ordering", ordering.value)
-
-  filterRows.value.forEach((row) => {
-    const field = getFilterField(row.field)
-
-    if (!field) return
-
-    if (isRangeFilter(row.field)) {
-      const from = resolveFilterInput(row.field, row.from)
-      const to = resolveFilterInput(row.field, row.to)
-
-      if (from || to) {
-        params.append(`${field.key}_range`, `${from}..${to}`)
-      }
-
-      return
-    }
-
-    const value = resolveFilterInput(row.field, row.value)
-
-    if (value) {
-      params.append(field.key, value)
-    }
-  })
+  const params = buildWorkParams(page)
 
   try {
     const response = await fetch(`${API_BASE_URL}/works/?${params.toString()}`)
@@ -248,6 +224,81 @@ async function fetchWorks(page = 1) {
     error.value = err.message || "Неизвестная ошибка"
   } finally {
     loading.value = false
+  }
+}
+
+function buildWorkParams(page = null) {
+  const params = new URLSearchParams()
+
+  if (page) params.append("page", page)
+
+  if (search.value) params.append("search", search.value)
+  if (ordering.value) params.append("ordering", ordering.value)
+
+  filterRows.value.forEach((row) => {
+    const field = getFilterField(row.field)
+
+    if (!field) return
+
+    if (isRangeFilter(row.field)) {
+      const from = resolveFilterInput(row.field, row.from)
+      const to = resolveFilterInput(row.field, row.to)
+
+      if (from || to) {
+        params.append(`${field.key}_range`, `${from}..${to}`)
+      }
+
+      return
+    }
+
+    const value = resolveFilterInput(row.field, row.value)
+
+    if (value) {
+      params.append(field.key, value)
+    }
+  })
+
+  return params
+}
+
+function buildAnalysisFilterParams() {
+  const params = buildWorkParams()
+
+  params.delete("ordering")
+
+  return params
+}
+
+async function analyzeSelectedWorks() {
+  if (!selectedWorksCount.value || analyzing.value) return
+
+  analyzing.value = true
+  error.value = ""
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/sentiment/analyze/`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        all_filtered: allFilteredSelected.value,
+        filters_query: allFilteredSelected.value ? buildAnalysisFilterParams().toString() : "",
+        work_ids: allFilteredSelected.value ? [] : [...selectedWorkIds.value],
+        segment_size: 50,
+      }),
+    })
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(data.detail || "Не удалось выполнить анализ")
+    }
+
+    router.push({ name: "sentiment-results", params: { runId: data.run.id } })
+  } catch (err) {
+    error.value = err.message || "Неизвестная ошибка"
+  } finally {
+    analyzing.value = false
   }
 }
 
@@ -509,6 +560,20 @@ onMounted(async () => {
 
           <p v-if="loading" class="text-sm text-slate-500">
             Обновление таблицы...
+          </p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3 border-b border-slate-200 px-5 py-3">
+          <button
+            @click="analyzeSelectedWorks"
+            :disabled="selectedWorksCount === 0 || analyzing"
+            class="rounded-xl bg-slate-900 px-5 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {{ analyzing ? "Анализирую..." : "Анализировать выбранные" }}
+          </button>
+
+          <p class="text-sm text-slate-600">
+            Анализ идёт фрагментами по 50 слов.
           </p>
         </div>
 

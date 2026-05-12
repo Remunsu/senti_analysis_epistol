@@ -2,26 +2,12 @@
 import { computed, ref } from "vue"
 import { RouterLink } from "vue-router"
 
-const selectedMode = ref("volume")
 const selectedFiles = ref([])
 const submitting = ref(false)
 const error = ref("")
 const uploadResult = ref(null)
 
 const API_BASE_URL = "http://127.0.0.1:8000/api"
-
-const modeOptions = [
-  {
-    value: "volume",
-    label: "Том",
-    description: "XML с набором TEI-произведений внутри тома",
-  },
-  {
-    value: "work",
-    label: "Одно произведение",
-    description: "XML одного TEI-произведения",
-  },
-]
 
 const uploadedWorks = computed(() => uploadResult.value?.works || [])
 const uploadedVolumes = computed(() => uploadResult.value?.volumes || [])
@@ -62,7 +48,7 @@ async function uploadXml() {
 
   const formData = new FormData()
 
-  formData.append("mode", selectedMode.value)
+  formData.append("mode", "volume")
   selectedFiles.value.forEach((file) => {
     formData.append("files", file)
   })
@@ -99,41 +85,8 @@ async function uploadXml() {
 
       <section class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
         <div class="mb-5">
-          <h2 class="mb-3 text-sm font-semibold text-slate-900">
-            Тип загрузки
-          </h2>
-
-          <div class="grid gap-3 md:grid-cols-2">
-            <label
-              v-for="option in modeOptions"
-              :key="option.value"
-              :class="[
-                'cursor-pointer rounded-xl border p-4',
-                selectedMode === option.value
-                  ? 'border-slate-900 bg-slate-50'
-                  : 'border-slate-200 hover:bg-slate-50',
-              ]"
-            >
-              <input
-                v-model="selectedMode"
-                type="radio"
-                name="upload-mode"
-                :value="option.value"
-                class="sr-only"
-              />
-              <span class="block font-semibold text-slate-900">
-                {{ option.label }}
-              </span>
-              <span class="mt-1 block text-sm text-slate-600">
-                {{ option.description }}
-              </span>
-            </label>
-          </div>
-        </div>
-
-        <div class="mb-5">
           <label class="mb-2 block text-sm font-semibold text-slate-900">
-            XML-файлы
+            XML-файлы томов
           </label>
           <input
             type="file"
