@@ -58,6 +58,9 @@ def split_text_into_word_segments(text: str, segment_size: int = 50):
 
 
 def analyze_fragments(fragments):
+    if not fragments:
+        return []
+
     classifier = get_classifier()
     predictions = classifier(
         [fragment["text"] for fragment in fragments],

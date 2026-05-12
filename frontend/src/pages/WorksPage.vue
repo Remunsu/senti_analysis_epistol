@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue"
 import { useRouter } from "vue-router"
+import { API_BASE_URL, readApiResponse } from "../api"
 import AutocompleteInput from "../components/AutocompleteInput.vue"
 import PaginationControls from "../components/PaginationControls.vue"
 import WorksTable from "../components/WorksTable.vue"
@@ -37,7 +38,6 @@ const allFilteredSelected = ref(false)
 const pageSize = 50
 let nextFilterId = 1
 
-const API_BASE_URL = "http://127.0.0.1:8000/api"
 const STORAGE_KEY = "sentiment-app:works-page-state"
 let orderingWatcherReady = false
 
@@ -67,18 +67,6 @@ const selectedWorksCount = computed(() => {
   if (allFilteredSelected.value) return totalCount.value
 
   return selectedWorkIds.value.size
-})
-
-const currentPageWorkIds = computed(() => works.value.map((work) => work.id))
-
-const selectedOnPageCount = computed(() => {
-  if (allFilteredSelected.value) return works.value.length
-
-  return currentPageWorkIds.value.filter((id) => selectedWorkIds.value.has(id)).length
-})
-
-const allCurrentPageSelected = computed(() => {
-  return works.value.length > 0 && selectedOnPageCount.value === works.value.length
 })
 
 function clearSelection() {
@@ -150,22 +138,6 @@ function resolveFilterInput(fieldInput, value) {
   })
 
   return option ? option.value : rawValue
-}
-
-async function readApiResponse(response, fallbackMessage) {
-  const contentType = response.headers.get("content-type") || ""
-
-  if (contentType.includes("application/json")) {
-    return response.json()
-  }
-
-  const text = await response.text()
-
-  return {
-    detail: text
-      ? `${fallbackMessage}. Сервер вернул не JSON-ответ.`
-      : fallbackMessage,
-  }
 }
 
 function resetFilterRowValues(row) {
@@ -401,21 +373,6 @@ function toggleWorkSelection(workId) {
     nextSelectedIds.delete(workId)
   } else {
     nextSelectedIds.add(workId)
-  }
-
-  selectedWorkIds.value = nextSelectedIds
-  savePageState()
-}
-
-function toggleCurrentPageSelection() {
-  if (allFilteredSelected.value) return
-
-  const nextSelectedIds = new Set(selectedWorkIds.value)
-
-  if (allCurrentPageSelected.value) {
-    currentPageWorkIds.value.forEach((id) => nextSelectedIds.delete(id))
-  } else {
-    currentPageWorkIds.value.forEach((id) => nextSelectedIds.add(id))
   }
 
   selectedWorkIds.value = nextSelectedIds

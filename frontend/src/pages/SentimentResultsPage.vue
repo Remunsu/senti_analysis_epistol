@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref, watch } from "vue"
 import { RouterLink, useRoute } from "vue-router"
+import { API_BASE_URL, readApiResponse } from "../api"
 
 const route = useRoute()
 
@@ -19,8 +20,6 @@ const charts = ref({
 const loading = ref(false)
 const error = ref("")
 let pollTimer = null
-
-const API_BASE_URL = "http://127.0.0.1:8000/api"
 
 const runId = computed(() => route.params.runId)
 
@@ -66,22 +65,6 @@ function scheduleResultsPolling() {
   pollTimer = setTimeout(() => {
     fetchResults({ silent: true })
   }, 2500)
-}
-
-async function readApiResponse(response, fallbackMessage) {
-  const contentType = response.headers.get("content-type") || ""
-
-  if (contentType.includes("application/json")) {
-    return response.json()
-  }
-
-  const text = await response.text()
-
-  return {
-    detail: text
-      ? `${fallbackMessage}. Сервер вернул не JSON-ответ.`
-      : fallbackMessage,
-  }
 }
 
 async function fetchResults({ silent = false } = {}) {
@@ -150,12 +133,6 @@ onUnmounted(() => {
             {{ run.model_name }} · фрагменты по {{ run.segment_size }} слов · работ: {{ run.works_count }}
           </p>
           <p
-            v-if="run?.status === 'running'"
-            class="mt-2 text-sm font-medium text-amber-700"
-          >
-            Анализ выполняется, результаты обновляются автоматически.
-          </p>
-          <p
             v-if="run?.status === 'failed'"
             class="mt-2 text-sm font-medium text-red-700"
           >
@@ -198,13 +175,6 @@ onUnmounted(() => {
             <p class="mt-2 text-3xl font-bold text-emerald-700">{{ percent(totals.positive, totals.total) }}%</p>
           </div>
         </section>
-
-        <div
-          v-if="run.status === 'running' && !summary.length"
-          class="mb-6 rounded-2xl bg-white p-5 text-slate-600 shadow-sm ring-1 ring-slate-200"
-        >
-          Первые итоги появятся после обработки нескольких писем.
-        </div>
 
         <section
           v-if="hasChartData"

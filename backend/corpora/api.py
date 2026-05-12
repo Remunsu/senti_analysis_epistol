@@ -1,9 +1,9 @@
 import re
-import threading
 
-from django.db.models import Q
-from django.db import close_old_connections, transaction
+from django.db.models import Count, Q
+from django.db import transaction
 from django.http import QueryDict
+from django_q.tasks import async_task
 from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework import viewsets, filters 
@@ -17,7 +17,7 @@ from .serializers import (
     WorkListSerializer,
     WorkDetailSerializer,
 )
-from .services.sentiment_analyzer import MODEL_DISPLAY_NAME, analyze_fragments, split_text_into_word_segments
+from .services.sentiment_analyzer import MODEL_DISPLAY_NAME
 from .services.tei_parser import parse_volume
 
 
@@ -28,7 +28,8 @@ class VolumeViewSet(viewsets.ReadOnlyModelViewSet):
 
 class XMLUploadView(APIView):
     parser_classes = [MultiPartParser, FormParser]
-    allowed_content_types = {"text/xml", "application/xml"}
+    allowed_content_types = {"text/xml", "application/xml", "application/octet-stream", ""}
+    max_file_size = 100 * 1024 * 1024
 
     def post(self, request):
         upload_mode = request.data.get("mode", "volume")
@@ -51,6 +52,14 @@ class XMLUploadView(APIView):
         if invalid_files:
             return Response(
                 {"detail": f"Можно загружать только XML-файлы: {', '.join(invalid_files)}"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        oversized_files = [xml_file.name for xml_file in xml_files if xml_file.size > self.max_file_size]
+
+        if oversized_files:
+            return Response(
+                {"detail": f"XML-файлы слишком большие: {', '.join(oversized_files)}"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -82,9 +91,11 @@ class XMLUploadView(APIView):
         )
 
     def is_xml_file(self, xml_file):
+        content_type = (xml_file.content_type or "").split(";", 1)[0].strip().lower()
+
         return (
-            xml_file.name.lower().endswith(".xml") or
-            xml_file.content_type in self.allowed_content_types
+            xml_file.name.lower().endswith(".xml") and
+            content_type in self.allowed_content_types
         )
 
 
@@ -226,9 +237,9 @@ class WorkFilterMixin:
             if values:
                 queryset = queryset.filter(**{f"{field}__in": values})
 
-        date_query = self.build_range_query("date", params)
-        if date_query:
-            queryset = queryset.filter(date_query)
+        year_query = self.build_year_query(params)
+        if year_query:
+            queryset = queryset.filter(year_query)
 
         page_query = self.build_range_query("page_number", params, numeric=True)
         if page_query:
@@ -277,6 +288,64 @@ class WorkFilterMixin:
                 query |= range_query
 
         return query
+
+    def build_year_query(self, params):
+        exact_values = self.clean_year_values(params.getlist("date"))
+        range_values = params.getlist("date_range")
+        from_values = self.clean_year_values(params.getlist("date_from"))
+        to_values = self.clean_year_values(params.getlist("date_to"))
+
+        query = Q()
+
+        if exact_values:
+            query |= Q(year__in=exact_values)
+
+        for value in range_values:
+            if ".." not in value:
+                continue
+
+            from_value, to_value = value.split("..", 1)
+            range_query = self.make_year_range_query(from_value, to_value)
+
+            if range_query:
+                query |= range_query
+
+        max_length = max(len(from_values), len(to_values))
+
+        for index in range(max_length):
+            from_value = from_values[index] if index < len(from_values) else ""
+            to_value = to_values[index] if index < len(to_values) else ""
+            range_query = self.make_year_range_query(from_value, to_value)
+
+            if range_query:
+                query |= range_query
+
+        return query
+
+    def make_year_range_query(self, from_value, to_value):
+        from_values = self.clean_year_values([from_value])
+        to_values = self.clean_year_values([to_value])
+
+        range_query = Q()
+
+        if from_values:
+            range_query &= Q(year__gte=from_values[0])
+
+        if to_values:
+            range_query &= Q(year__lte=to_values[0])
+
+        return range_query
+
+    def clean_year_values(self, values):
+        years = []
+
+        for value in values:
+            match = re.search(r"\d{4}", str(value or ""))
+
+            if match:
+                years.append(int(match.group(0)))
+
+        return years
 
     def make_range_query(self, field: str, from_value, to_value, numeric: bool = False):
         from_values = self.clean_filter_values([from_value], numeric)
@@ -329,66 +398,32 @@ class SentimentAnalysisView(WorkFilterMixin, APIView):
             )
 
         work_ids = [work.id for work in works]
-        analysis_thread = threading.Thread(
-            target=self.run_analysis,
-            args=(run.id, work_ids, segment_size),
-            daemon=True,
-        )
-        analysis_thread.start()
+
+        try:
+            task_id = async_task(
+                "corpora.tasks.run_sentiment_analysis",
+                run.id,
+                work_ids,
+                segment_size,
+            )
+        except Exception as exc:
+            run.status = "failed"
+            run.error_message = str(exc) or "Не удалось поставить анализ в очередь"
+            run.save(update_fields=["status", "error_message"])
+
+            return Response(
+                {"detail": run.error_message},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
 
         return Response(
             {
                 "run": SentimentAnalysisRunSerializer(run).data,
+                "task_id": task_id,
                 "results_count": 0,
             },
             status=status.HTTP_202_ACCEPTED,
         )
-
-    @staticmethod
-    def run_analysis(run_id, work_ids, segment_size):
-        close_old_connections()
-
-        try:
-            run = SentimentAnalysisRun.objects.get(id=run_id)
-            works = Work.objects.filter(id__in=work_ids).exclude(plain_text="").order_by("id")
-            results_count = 0
-
-            for work in works:
-                fragments = split_text_into_word_segments(work.plain_text, segment_size)
-                analysis_results = analyze_fragments(fragments)
-
-                result_objects = [
-                    SentimentAnalysisResult(
-                        run=run,
-                        work=work,
-                        segment_index=result["segment_index"],
-                        word_start=result["word_start"],
-                        word_end=result["word_end"],
-                        text=result["text"],
-                        label=result["label"],
-                        confidence=result["confidence"],
-                    )
-                    for result in analysis_results
-                ]
-
-                SentimentAnalysisResult.objects.bulk_create(result_objects, batch_size=500)
-                results_count += len(result_objects)
-                SentimentAnalysisRun.objects.filter(id=run.id).update(results_count=results_count)
-        except Exception as exc:
-            SentimentAnalysisResult.objects.filter(run_id=run_id).delete()
-            SentimentAnalysisRun.objects.filter(id=run_id).update(
-                status="failed",
-                error_message=str(exc) or "Не удалось выполнить анализ",
-                results_count=0,
-            )
-        else:
-            SentimentAnalysisRun.objects.filter(id=run_id).update(
-                status="completed",
-                results_count=results_count,
-            )
-        finally:
-            close_old_connections()
-
 
     def get_selected_works(self, data):
         queryset = Work.objects.exclude(plain_text="")
@@ -456,71 +491,50 @@ class SentimentAnalysisResultsView(APIView):
         return SentimentAnalysisRun.objects.order_by("-created_at").first()
 
     def build_summary(self, results):
-        by_work = {}
-
         result_rows = results.values(
             "work_id",
             "work__title",
             "work__author",
             "work__date",
+            "work__year",
             "work__genre",
             "work__place",
-            "label",
-        )
+        ).annotate(
+            segments_count=Count("id"),
+            negative_count=Count("id", filter=Q(label="-1")),
+            neutral_count=Count("id", filter=Q(label="0")),
+            positive_count=Count("id", filter=Q(label="1")),
+        ).order_by("work_id")
+
+        summaries = []
 
         for result in result_rows:
-            work_summary = by_work.setdefault(
-                result["work_id"],
+            segments_count = result["segments_count"] or 1
+            score_sum = result["positive_count"] - result["negative_count"]
+            mean_score = score_sum / segments_count
+
+            summaries.append(
                 {
                     "work_id": result["work_id"],
                     "title": result["work__title"],
                     "author": result["work__author"],
                     "date": result["work__date"],
+                    "year": result["work__year"],
                     "genre": result["work__genre"],
                     "place": result["work__place"],
-                    "year": self.extract_year(result["work__date"]),
-                    "segments_count": 0,
-                    "negative_count": 0,
-                    "neutral_count": 0,
-                    "positive_count": 0,
-                    "score_sum": 0,
-                },
+                    "segments_count": result["segments_count"],
+                    "negative_count": result["negative_count"],
+                    "neutral_count": result["neutral_count"],
+                    "positive_count": result["positive_count"],
+                    "score_sum": score_sum,
+                    "mean_score": mean_score,
+                    "negative_share": result["negative_count"] / segments_count,
+                    "neutral_share": result["neutral_count"] / segments_count,
+                    "positive_share": result["positive_count"] / segments_count,
+                }
             )
-            score = int(result["label"])
 
-            work_summary["segments_count"] += 1
-            work_summary["score_sum"] += score
-
-            if score < 0:
-                work_summary["negative_count"] += 1
-            elif score > 0:
-                work_summary["positive_count"] += 1
-            else:
-                work_summary["neutral_count"] += 1
-
-        summaries = []
-
-        for work_summary in by_work.values():
-            segments_count = work_summary["segments_count"] or 1
-            mean_score = work_summary["score_sum"] / segments_count
-
-            summaries.append({
-                **work_summary,
-                "mean_score": mean_score,
-                "negative_share": work_summary["negative_count"] / segments_count,
-                "neutral_share": work_summary["neutral_count"] / segments_count,
-                "positive_share": work_summary["positive_count"] / segments_count,
-            })
-
-        return sorted(summaries, key=lambda item: item["work_id"])
-
-    def extract_year(self, date_value):
-        if not date_value:
-            return ""
-
-        match = re.search(r"\d{4}", str(date_value))
-
-        return match.group(0) if match else ""
+        return summaries
 
     def build_totals(self, summaries):
         totals = {
@@ -542,7 +556,8 @@ class SentimentAnalysisResultsView(APIView):
         groups = {}
 
         for item in summaries:
-            label = item.get(field) or f"Без {'года' if field == 'year' else 'места'}"
+            raw_label = item.get(field)
+            label = str(raw_label) if raw_label else f"Без {'года' if field == 'year' else 'места'}"
             group = groups.setdefault(
                 label,
                 {
@@ -577,7 +592,13 @@ class SentimentAnalysisResultsView(APIView):
             })
 
         if field == "year":
-            return sorted(grouped_items, key=lambda item: item["label"])
+            return sorted(
+                grouped_items,
+                key=lambda item: (
+                    not item["label"].isdigit(),
+                    int(item["label"]) if item["label"].isdigit() else item["label"],
+                ),
+            )
 
         return sorted(grouped_items, key=lambda item: (-item["segments_count"], item["label"]))
 
@@ -656,6 +677,12 @@ class WorkViewSet(WorkFilterMixin, viewsets.ReadOnlyModelViewSet):
                 .values_list("date", flat=True)
                 .distinct()
                 .order_by("date")
+            ),
+            "years": list(
+                Work.objects.exclude(year__isnull=True)
+                .values_list("year", flat=True)
+                .distinct()
+                .order_by("year")
             ),
             "page_numbers": list(
                 Work.objects.exclude(page_number__isnull=True)

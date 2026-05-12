@@ -30,7 +30,11 @@ SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-key")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "False") == "True"
 
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = [
+    host.strip()
+    for host in os.getenv("ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+    if host.strip()
+]
 
 
 # Application definition
@@ -44,6 +48,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'rest_framework',
     'corpora',
+    "django_q",
     "django_filters",
     "corsheaders",
 ]
@@ -141,4 +146,14 @@ MEDIA_ROOT = BASE_DIR / "media"
 REST_FRAMEWORK = {
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 50,
+}
+
+Q_CLUSTER = {
+    "name": "sentiment-analysis",
+    "workers": 1,
+    "timeout": 3600,
+    "retry": 7200,
+    "queue_limit": 50,
+    "bulk": 10,
+    "orm": "default",
 }

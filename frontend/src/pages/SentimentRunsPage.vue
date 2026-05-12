@@ -1,13 +1,12 @@
 <script setup>
 import { computed, onMounted, onUnmounted, ref } from "vue"
 import { RouterLink } from "vue-router"
+import { API_BASE_URL, readApiResponse } from "../api"
 
 const runs = ref([])
 const loading = ref(false)
 const error = ref("")
 let pollTimer = null
-
-const API_BASE_URL = "http://127.0.0.1:8000/api"
 
 const groupedRuns = computed(() => {
   return runs.value.reduce((groups, run) => {
@@ -61,22 +60,6 @@ function statusClass(status) {
   if (status === "failed") return "bg-red-50 text-red-700 ring-red-200"
 
   return "bg-emerald-50 text-emerald-700 ring-emerald-200"
-}
-
-async function readApiResponse(response, fallbackMessage) {
-  const contentType = response.headers.get("content-type") || ""
-
-  if (contentType.includes("application/json")) {
-    return response.json()
-  }
-
-  const text = await response.text()
-
-  return {
-    detail: text
-      ? `${fallbackMessage}. Сервер вернул не JSON-ответ.`
-      : fallbackMessage,
-  }
 }
 
 function clearPollTimer() {

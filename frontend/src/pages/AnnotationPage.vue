@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from "vue"
 import { RouterLink } from "vue-router"
+import { API_BASE_URL } from "../api"
 
 const task = ref(null)
 const fragments = ref([])
@@ -10,8 +11,6 @@ const loading = ref(false)
 const saving = ref(false)
 const error = ref("")
 const success = ref("")
-
-const API_BASE_URL = "http://127.0.0.1:8000/api"
 
 const labelOptions = [
   { value: "-1", label: "Негативная" },

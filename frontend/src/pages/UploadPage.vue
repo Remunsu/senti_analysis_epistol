@@ -1,13 +1,12 @@
 <script setup>
 import { computed, ref } from "vue"
 import { RouterLink } from "vue-router"
+import { API_BASE_URL, readApiResponse } from "../api"
 
 const selectedFiles = ref([])
 const submitting = ref(false)
 const error = ref("")
 const uploadResult = ref(null)
-
-const API_BASE_URL = "http://127.0.0.1:8000/api"
 
 const uploadedWorks = computed(() => uploadResult.value?.works || [])
 const uploadedVolumes = computed(() => uploadResult.value?.volumes || [])
@@ -59,7 +58,7 @@ async function uploadXml() {
       body: formData,
     })
 
-    const data = await response.json()
+    const data = await readApiResponse(response, "Не удалось загрузить XML")
 
     if (!response.ok) {
       throw new Error(data.detail || "Не удалось загрузить XML")

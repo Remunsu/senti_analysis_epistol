@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue"
 import { RouterLink, useRoute } from "vue-router"
+import { API_BASE_URL } from "../api"
 import PaginationControls from "../components/PaginationControls.vue"
 
 const route = useRoute()
@@ -17,7 +18,6 @@ const nextPageUrl = ref(null)
 const previousPageUrl = ref(null)
 
 const pageSize = 50
-const API_BASE_URL = "http://127.0.0.1:8000/api"
 
 const volumeId = computed(() => route.params.id)
 
