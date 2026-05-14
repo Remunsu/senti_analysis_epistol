@@ -10,7 +10,9 @@ const volume = ref(null)
 const works = ref([])
 const loading = ref(false)
 const worksLoading = ref(false)
+const facsimileUploading = ref(false)
 const error = ref("")
+const facsimileInput = ref(null)
 
 const currentPage = ref(1)
 const totalCount = ref(0)
@@ -36,6 +38,7 @@ const properties = computed(() => {
     ["Название", volume.value.title],
     ["Краткое название", volume.value.title_short],
     ["Автор", volume.value.author],
+    ["Факсимиле", volume.value.facsimile_name],
     ["Загружен", formatDateTime(volume.value.uploaded_at)],
   ]
 })
@@ -107,6 +110,54 @@ async function fetchWorks(page = 1) {
   }
 }
 
+function openFacsimilePicker() {
+  facsimileInput.value?.click()
+}
+
+async function uploadFacsimile(event) {
+  const file = event.target.files?.[0]
+
+  event.target.value = ""
+
+  if (!file || facsimileUploading.value) return
+
+  if (!isAllowedFacsimileFile(file)) {
+    error.value = "Можно загрузить только PDF, DJVU или DJV"
+    return
+  }
+
+  facsimileUploading.value = true
+  error.value = ""
+
+  const formData = new FormData()
+
+  formData.append("file", file)
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/volumes/${volumeId.value}/facsimile/`, {
+      method: "POST",
+      body: formData,
+    })
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(data.detail || "Не удалось загрузить файл тома")
+    }
+
+    volume.value = data
+  } catch (err) {
+    error.value = err.message || "Неизвестная ошибка"
+  } finally {
+    facsimileUploading.value = false
+  }
+}
+
+function isAllowedFacsimileFile(file) {
+  const name = file.name.toLowerCase()
+
+  return name.endsWith(".pdf") || name.endsWith(".djvu") || name.endsWith(".djv")
+}
+
 function goToPage(page) {
   if (page < 1 || page > totalPages.value || worksLoading.value) return
 
@@ -161,9 +212,40 @@ onMounted(() => {
 
       <template v-else-if="volume">
         <section class="mb-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-          <h2 class="mb-4 text-lg font-semibold text-slate-900">
-            Свойства
-          </h2>
+          <div class="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <h2 class="text-lg font-semibold text-slate-900">
+              Свойства
+            </h2>
+
+            <div class="flex flex-wrap items-center gap-3">
+              <a
+                v-if="volume.facsimile_url"
+                :href="volume.facsimile_url"
+                target="_blank"
+                rel="noreferrer"
+                class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+              >
+                Открыть файл
+              </a>
+
+              <button
+                type="button"
+                @click="openFacsimilePicker"
+                :disabled="facsimileUploading"
+                class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {{ facsimileUploading ? "Загружаю..." : "Загрузить PDF/DJVU" }}
+              </button>
+
+              <input
+                ref="facsimileInput"
+                type="file"
+                accept=".pdf,.djvu,.djv,application/pdf,image/vnd.djvu"
+                class="hidden"
+                @change="uploadFacsimile"
+              />
+            </div>
+          </div>
 
           <dl class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <div

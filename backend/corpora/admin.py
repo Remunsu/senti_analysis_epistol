@@ -5,7 +5,7 @@ from .services.tei_parser import parse_volume
 
 @admin.register(Volume)
 class VolumeAdmin(admin.ModelAdmin):
-    list_display = ("id", "number", "title", "author", "uploaded_at")
+    list_display = ("id", "number", "title", "author", "facsimile_file", "uploaded_at")
     search_fields = ("title", "author")
 
     def save_model(self, request, obj, form, change):

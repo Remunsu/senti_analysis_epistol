@@ -1,9 +1,17 @@
 import csv
 import re
+import shutil
+import subprocess
+import tempfile
+from pathlib import Path
 
+from django.core.files import File
 from django.db.models import Count, Q
 from django.db import transaction
-from django.http import HttpResponse, QueryDict
+from django.http import FileResponse, HttpResponse, QueryDict
+from django.utils.text import get_valid_filename
+from django.utils.decorators import method_decorator
+from django.views.decorators.clickjacking import xframe_options_exempt
 from django_q.tasks import async_task
 from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -26,6 +34,131 @@ from .services.tei_parser import parse_volume
 class VolumeViewSet(viewsets.ReadOnlyModelViewSet):
     queryset = Volume.objects.annotate(works_count=Count("works")).order_by("number", "id")
     serializer_class = VolumeSerializer
+    parser_classes = [MultiPartParser, FormParser]
+    facsimile_extensions = {".pdf", ".djvu", ".djv"}
+
+    @action(detail=True, methods=["post"], url_path="facsimile")
+    def upload_facsimile(self, request, pk=None):
+        volume = self.get_object()
+        facsimile_file = request.FILES.get("file")
+
+        if not facsimile_file:
+            return Response(
+                {"detail": "Загрузите PDF или DJVU-файл"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        extension = Path(facsimile_file.name).suffix.lower()
+
+        if extension not in self.facsimile_extensions:
+            return Response(
+                {"detail": "Можно загрузить только PDF, DJVU или DJV"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            save_volume_facsimile(volume, facsimile_file, extension)
+        except DjvuConversionError as exc:
+            return Response(
+                {"detail": str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(VolumeSerializer(volume, context={"request": request}).data)
+
+    @method_decorator(xframe_options_exempt)
+    @action(detail=True, methods=["get"], url_path="facsimile-file")
+    def facsimile_file(self, request, pk=None):
+        volume = self.get_object()
+
+        if not volume.facsimile_file:
+            return Response(
+                {"detail": "Для тома не загружен PDF или DJVU"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        content_type = get_facsimile_content_type(volume.facsimile_file.name)
+        file_handle = volume.facsimile_file.open("rb")
+
+        return FileResponse(
+            file_handle,
+            as_attachment=False,
+            filename=Path(volume.facsimile_file.name).name,
+            content_type=content_type,
+        )
+
+
+def get_facsimile_content_type(file_name):
+    extension = Path(file_name).suffix.lower()
+
+    if extension == ".pdf":
+        return "application/pdf"
+
+    if extension in {".djvu", ".djv"}:
+        return "image/vnd.djvu"
+
+    return "application/octet-stream"
+
+
+class DjvuConversionError(Exception):
+    pass
+
+
+def save_volume_facsimile(volume, facsimile_file, extension):
+    if extension == ".pdf":
+        if volume.facsimile_file:
+            volume.facsimile_file.delete(save=False)
+
+        volume.facsimile_file = facsimile_file
+        volume.save(update_fields=["facsimile_file"])
+        return
+
+    save_converted_djvu(volume, facsimile_file)
+
+
+def save_converted_djvu(volume, facsimile_file):
+    ddjvu_path = shutil.which("ddjvu")
+
+    if not ddjvu_path:
+        raise DjvuConversionError(
+            "Для загрузки DJVU установите DjVuLibre: нужна команда ddjvu для конвертации в PDF."
+        )
+
+    source_name = get_valid_filename(Path(facsimile_file.name).stem) or "facsimile"
+    pdf_name = f"{source_name}.pdf"
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        temp_path = Path(temp_dir)
+        input_path = temp_path / f"{source_name}{Path(facsimile_file.name).suffix.lower()}"
+        output_path = temp_path / pdf_name
+
+        with input_path.open("wb") as target:
+            for chunk in facsimile_file.chunks():
+                target.write(chunk)
+
+        try:
+            subprocess.run(
+                [ddjvu_path, "-format=pdf", str(input_path), str(output_path)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            error_text = (exc.stderr or exc.stdout or "").strip()
+            message = "Не удалось конвертировать DJVU в PDF"
+
+            if error_text:
+                message = f"{message}: {error_text}"
+
+            raise DjvuConversionError(message) from exc
+
+        with output_path.open("rb") as converted_pdf:
+            if volume.facsimile_file:
+                volume.facsimile_file.delete(save=False)
+
+            volume.facsimile_file.save(pdf_name, File(converted_pdf), save=False)
+
+    volume.save(update_fields=["facsimile_file"])
 
 
 class XMLUploadView(APIView):

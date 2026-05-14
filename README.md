@@ -2,6 +2,7 @@
 - Python>=3.12
 - Node
 - PostgreSQL
+- DjVuLibre with `ddjvu` in PATH, optional for DJVU upload conversion
 
 # Install Django and PostgreSQL
 Create virtual environment and install python packages:
