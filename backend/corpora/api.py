@@ -1,8 +1,9 @@
+import csv
 import re
 
 from django.db.models import Count, Q
 from django.db import transaction
-from django.http import QueryDict
+from django.http import HttpResponse, QueryDict
 from django_q.tasks import async_task
 from rest_framework import status
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -100,33 +101,68 @@ class XMLUploadView(APIView):
         )
 
 
-class SentimentAnnotationTaskView(APIView):
-    default_genre = "письм"
+class SentimentAnnotationCriteriaMixin:
+    target_genre = "письмо"
+    target_languages = ("ru", "de ru", "la ru")
     default_segment_size = 50
+    window_step = 25
+
+    def get_annotation_queryset(self):
+        return (
+            Work.objects.select_related("volume")
+            .filter(genre=self.target_genre, language__in=self.target_languages)
+            .exclude(plain_text="")
+        )
+
+    def build_annotation_stats(self):
+        queryset = self.get_annotation_queryset()
+        total_count = queryset.count()
+        labeled_count = queryset.filter(sentiment_labels__isnull=False).distinct().count()
+
+        return {
+            "total_count": total_count,
+            "labeled_count": labeled_count,
+            "remaining_count": max(total_count - labeled_count, 0),
+        }
+
+    def build_annotation_criteria(self):
+        return {
+            "genre": self.target_genre,
+            "languages": list(self.target_languages),
+            "segment_size": self.default_segment_size,
+            "window_step": self.window_step,
+        }
+
+
+class SentimentAnnotationTaskView(SentimentAnnotationCriteriaMixin, APIView):
 
     def get(self, request):
-        genre = request.query_params.get("genre", self.default_genre)
-        segment_size = self.get_segment_size(request)
-
         work = (
-            Work.objects.select_related("volume")
-            .filter(genre__icontains=genre)
-            .exclude(plain_text="")
+            self.get_annotation_queryset()
             .filter(sentiment_labels__isnull=True)
             .order_by("id")
             .first()
         )
 
+        payload = {
+            "criteria": self.build_annotation_criteria(),
+            **self.build_annotation_stats(),
+            "work": None,
+            "segment_size": self.default_segment_size,
+            "window_step": self.window_step,
+            "fragments": [],
+        }
+
         if not work:
-            return Response(
-                {"detail": "Нет неразмеченных писем для выбранного жанра"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
+            return Response({
+                **payload,
+                "detail": "Нет неразмеченных писем для выбранных условий",
+            })
 
         return Response({
+            **payload,
             "work": WorkDetailSerializer(work).data,
-            "segment_size": segment_size,
-            "fragments": self.build_fragments(work.plain_text, segment_size),
+            "fragments": self.build_fragments(work.plain_text),
         })
 
     @transaction.atomic
@@ -146,11 +182,11 @@ class SentimentAnnotationTaskView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        work = Work.objects.filter(id=work_id).first()
+        work = self.get_annotation_queryset().filter(id=work_id).first()
 
         if not work:
             return Response(
-                {"detail": "Произведение не найдено"},
+                {"detail": "Письмо не найдено или не входит в набор для разметки"},
                 status=status.HTTP_404_NOT_FOUND,
             )
 
@@ -178,7 +214,7 @@ class SentimentAnnotationTaskView(APIView):
                 word_end=fragment["word_end"],
                 text=fragment["text"],
                 label=fragment["label"],
-                comment=fragment.get("comment", ""),
+                comment="",
             )
             for fragment in fragments
         ]
@@ -188,27 +224,21 @@ class SentimentAnnotationTaskView(APIView):
         return Response({
             "work_id": work.id,
             "saved": len(labels),
+            **self.build_annotation_stats(),
         }, status=status.HTTP_201_CREATED)
 
-    def get_segment_size(self, request):
-        raw_segment_size = request.query_params.get("segment_size", self.default_segment_size)
-
-        try:
-            segment_size = int(raw_segment_size)
-        except (TypeError, ValueError):
-            return self.default_segment_size
-
-        if segment_size < 10 or segment_size > 300:
-            return self.default_segment_size
-
-        return segment_size
-
-    def build_fragments(self, text: str, segment_size: int):
+    def build_fragments(self, text: str):
         words = text.split()
         fragments = []
 
-        for segment_index, start in enumerate(range(0, len(words), segment_size)):
-            end = min(start + segment_size, len(words))
+        if not words:
+            return fragments
+
+        start = 0
+        segment_index = 0
+
+        while start < len(words):
+            end = min(start + self.default_segment_size, len(words))
 
             fragments.append({
                 "segment_index": segment_index,
@@ -216,10 +246,83 @@ class SentimentAnnotationTaskView(APIView):
                 "word_end": end,
                 "text": " ".join(words[start:end]),
                 "label": "",
-                "comment": "",
             })
 
+            if end == len(words):
+                break
+
+            start += self.window_step
+            segment_index += 1
+
         return fragments
+
+
+class SentimentAnnotationExportView(SentimentAnnotationCriteriaMixin, APIView):
+    def get(self, request):
+        response = HttpResponse(content_type="text/csv; charset=utf-8")
+        response["Content-Disposition"] = 'attachment; filename="sentiment_annotations.csv"'
+
+        writer = csv.writer(response)
+        writer.writerow([
+            "work_id",
+            "source_id",
+            "volume_id",
+            "volume_number",
+            "volume_title",
+            "work_number",
+            "title",
+            "author",
+            "genre",
+            "language",
+            "date_from",
+            "date_to",
+            "date",
+            "place",
+            "pages",
+            "segment_index",
+            "word_start",
+            "word_end",
+            "label",
+            "text",
+            "created_at",
+        ])
+
+        labels = (
+            SentimentFragmentLabel.objects
+            .select_related("work", "work__volume")
+            .filter(work__in=self.get_annotation_queryset())
+            .order_by("work_id", "segment_index")
+        )
+
+        for label in labels.iterator(chunk_size=1000):
+            work = label.work
+            volume = work.volume
+
+            writer.writerow([
+                work.id,
+                work.source_id,
+                volume.id,
+                volume.number,
+                volume.title,
+                work.number,
+                work.title,
+                work.author,
+                work.genre,
+                work.language,
+                work.date_from,
+                work.date_to,
+                format_work_date(work),
+                work.place,
+                work.pages,
+                label.segment_index,
+                label.word_start,
+                label.word_end,
+                label.label,
+                label.text,
+                label.created_at.isoformat(),
+            ])
+
+        return response
 
 
 class WorkFilterMixin:

@@ -4,6 +4,7 @@ from .api import (
     SentimentAnalysisRunsView,
     SentimentAnalysisResultsView,
     SentimentAnalysisView,
+    SentimentAnnotationExportView,
     SentimentAnnotationTaskView,
     VolumeViewSet,
     WorkViewSet,
@@ -15,6 +16,7 @@ router.register("volumes", VolumeViewSet)
 router.register("works", WorkViewSet)
 
 urlpatterns = [
+    path("annotations/export/", SentimentAnnotationExportView.as_view()),
     path("annotations/task/", SentimentAnnotationTaskView.as_view()),
     path("sentiment/analyze/", SentimentAnalysisView.as_view()),
     path("sentiment/runs/", SentimentAnalysisRunsView.as_view()),

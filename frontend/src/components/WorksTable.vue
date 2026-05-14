@@ -34,14 +34,34 @@ const selectedOnPageCount = computed(() => {
 function isWorkSelected(workId) {
   return props.allFilteredSelected || props.selectedIds.has(workId)
 }
+
+function formatWorkDate(work) {
+  const dateFrom = String(work.date_from || "").trim()
+  const dateTo = String(work.date_to || "").trim()
+
+  if (dateFrom && dateTo && dateFrom !== dateTo) {
+    return `${dateFrom}-${dateTo}`
+  }
+
+  return dateFrom || dateTo || work.date || ""
+}
 </script>
 
 <template>
   <div class="overflow-x-auto">
-    <table class="w-full border-collapse text-left">
+    <table class="min-w-[980px] table-fixed border-collapse text-left">
+      <colgroup>
+        <col class="w-12" />
+        <col />
+        <col class="w-40" />
+        <col class="w-44" />
+        <col class="w-44" />
+        <col class="w-24" />
+      </colgroup>
+
       <thead class="bg-slate-100 text-sm text-slate-700">
         <tr>
-          <th class="w-12 px-5 py-3">
+          <th class="px-5 py-3">
             <input
               type="checkbox"
               :checked="allFilteredSelected"
@@ -52,11 +72,11 @@ function isWorkSelected(workId) {
               @change="emit('toggle-all-filtered')"
             />
           </th>
-          <th class="w-[10%] px-5 py-3 font-semibold">Номер</th>
           <th class="w-[35%] px-5 py-3 font-semibold">Название</th>
           <th class="w-[15%] px-5 py-3 font-semibold">Автор</th>
           <th class="w-[20%] px-5 py-3 font-semibold">Жанр</th>
-          <th class="w-[15%] px-5 py-3 font-semibold">Дата</th>
+          <th class="w-[5%] px-5 py-3 font-semibold">Номер</th>
+          <th class="w-[25%] px-5 py-3 font-semibold">Дата</th>
         </tr>
       </thead>
 
@@ -77,33 +97,29 @@ function isWorkSelected(workId) {
             />
           </td>
 
+          <td class="px-5 py-3">
+            <RouterLink
+              :to="{ name: 'work-detail', params: { id: work.id } }"
+              class="break-words font-medium text-slate-900 hover:text-slate-600 hover:underline">
+              {{ work.title || "Без названия" }}
+            </RouterLink>
+          </td>
+
+          <td class="break-words px-5 py-3 text-sm text-slate-700">
+            {{ work.author || "—" }}
+          </td>
+
+          <td class="break-words px-5 py-3 text-sm text-slate-700">
+            {{ work.genre || "—" }}
+          </td>
+
           <td class="px-5 py-3 text-sm text-slate-700">
             {{ work.number || "—" }}
           </td>
 
-          <td class="max-w-md px-5 py-3">
-            <RouterLink
-              :to="{ name: 'work-detail', params: { id: work.id } }"
-              class="font-medium text-slate-900 hover:text-slate-600 hover:underline"
-            >
-              {{ work.title || "Без названия" }}
-            </RouterLink>
-            <div v-if="work.title_short" class="mt-1 text-sm text-slate-500">
-              {{ work.title_short }}
-            </div>
-          </td>
-
           <td class="px-5 py-3 text-sm text-slate-700">
-            {{ work.author || "—" }}
-          </td>
-
-          <td class="px-5 py-3 text-sm text-slate-700">
-            {{ work.genre || "—" }}
-          </td>
-
-          <td class="px-5 py-3 text-slate-700">
-            <span v-if="work.date">
-              {{ work.date }}
+            <span v-if="formatWorkDate(work)" class="break-words">
+              {{ formatWorkDate(work) }}
             </span>
             <span v-else>—</span>
           </td>

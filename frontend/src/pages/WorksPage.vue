@@ -220,8 +220,8 @@ function restorePageState() {
 }
 
 function normalizeOrderingValue(value) {
-  if (value === "date") return "date_from"
-  if (value === "-date") return "-date_from"
+  if (value === "date" || value === "date_from") return "date_from,date_to,number"
+  if (value === "-date" || value === "-date_from") return "-date_from,-date_to,number"
   if (value === "page_number") return "number"
 
   return value || "id"
@@ -493,8 +493,8 @@ onMounted(async () => {
               <option value="id">По добавлению</option>
               <option value="title">Название А–Я</option>
               <option value="-title">Название Я–А</option>
-              <option value="date_from">Дата ↑</option>
-              <option value="-date_from">Дата ↓</option>
+              <option value="date_from,date_to,number">Дата ↑</option>
+              <option value="-date_from,-date_to,number">Дата ↓</option>
               <option value="genre">Жанр</option>
               <option value="number">Номер</option>
             </select>
@@ -502,17 +502,10 @@ onMounted(async () => {
         </div>
 
         <div class="mt-4 border-t border-slate-200 pt-4">
-          <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <div class="mb-3">
             <h2 class="text-sm font-semibold text-slate-900">
               Фильтры
             </h2>
-
-            <button
-              @click="addFilterRow"
-              class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
-            >
-              Добавить фильтр
-            </button>
           </div>
 
           <div v-if="filterRows.length" class="space-y-3">
@@ -586,6 +579,15 @@ onMounted(async () => {
                 </button>
               </div>
             </div>
+          </div>
+
+          <div class="mt-4">
+            <button
+              @click="addFilterRow"
+              class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            >
+              Добавить фильтр
+            </button>
           </div>
         </div>
 

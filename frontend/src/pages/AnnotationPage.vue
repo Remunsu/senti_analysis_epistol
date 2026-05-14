@@ -5,10 +5,20 @@ import { API_BASE_URL } from "../api"
 
 const task = ref(null)
 const fragments = ref([])
-const genre = ref("письм")
-const segmentSize = ref(50)
+const criteria = ref({
+  genre: "письмо",
+  languages: ["ru", "de ru", "la ru"],
+  segment_size: 50,
+  window_step: 25,
+})
+const stats = ref({
+  total_count: 0,
+  labeled_count: 0,
+  remaining_count: 0,
+})
 const loading = ref(false)
 const saving = ref(false)
+const exporting = ref(false)
 const error = ref("")
 const success = ref("")
 
@@ -26,32 +36,49 @@ const canSave = computed(() => {
   return task.value && fragments.value.length > 0 && labeledCount.value === fragments.value.length
 })
 
-async function fetchTask() {
+async function fetchTask(options = {}) {
+  const { clearMessages = true } = options
+
   loading.value = true
-  error.value = ""
-  success.value = ""
+  if (clearMessages) {
+    error.value = ""
+    success.value = ""
+  }
   task.value = null
   fragments.value = []
 
-  const params = new URLSearchParams()
-
-  params.append("genre", genre.value)
-  params.append("segment_size", segmentSize.value)
-
   try {
-    const response = await fetch(`${API_BASE_URL}/annotations/task/?${params.toString()}`)
+    const response = await fetch(`${API_BASE_URL}/annotations/task/`)
     const data = await response.json()
+    applyAnnotationMeta(data)
 
     if (!response.ok) {
       throw new Error(data.detail || "Не удалось получить письмо для разметки")
     }
 
+    if (!data.work) {
+      success.value = data.detail || "Все подходящие письма уже размечены"
+      return
+    }
+
     task.value = data
-    fragments.value = data.fragments
+    fragments.value = data.fragments || []
   } catch (err) {
     error.value = err.message || "Неизвестная ошибка"
   } finally {
     loading.value = false
+  }
+}
+
+function applyAnnotationMeta(data) {
+  if (data.criteria) {
+    criteria.value = data.criteria
+  }
+
+  stats.value = {
+    total_count: Number(data.total_count) || 0,
+    labeled_count: Number(data.labeled_count) || 0,
+    remaining_count: Number(data.remaining_count) || 0,
   }
 }
 
@@ -82,8 +109,9 @@ async function saveLabels() {
       throw new Error(data.detail || "Не удалось сохранить разметку")
     }
 
+    applyAnnotationMeta(data)
     success.value = `Сохранено фрагментов: ${data.saved}`
-    await fetchTask()
+    await fetchTask({ clearMessages: false })
   } catch (err) {
     error.value = err.message || "Неизвестная ошибка"
   } finally {
@@ -96,6 +124,33 @@ function setAllLabels(label) {
     ...fragment,
     label,
   }))
+}
+
+async function exportLabels() {
+  exporting.value = true
+  error.value = ""
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/annotations/export/`)
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}))
+      throw new Error(data.detail || "Не удалось экспортировать разметку")
+    }
+
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement("a")
+
+    link.href = url
+    link.download = `sentiment_annotations_${new Date().toISOString().slice(0, 10)}.csv`
+    link.click()
+    URL.revokeObjectURL(url)
+  } catch (err) {
+    error.value = err.message || "Неизвестная ошибка"
+  } finally {
+    exporting.value = false
+  }
 }
 
 onMounted(() => {
@@ -111,21 +166,54 @@ onMounted(() => {
           Разметка писем
         </h1>
         <p class="mt-2 text-slate-600">
-          Одно письмо размечается целиком фрагментами по {{ segmentSize }} слов.
+          Жанр: {{ criteria.genre }}. Языки: {{ criteria.languages.join(", ") }}. Окно: {{ criteria.segment_size }} слов, шаг: {{ criteria.window_step }}.
         </p>
       </div>
 
       <section class="mb-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-        <div class="grid gap-4 md:grid-cols-[minmax(0,1fr)_180px_auto]">
-
-          <div class="flex items-end">
-            <button
-              @click="fetchTask"
-              :disabled="loading || saving"
-              class="w-full rounded-xl border border-slate-300 px-5 py-2 font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40 md:w-auto">
-              Следующее письмо
-            </button>
+        <div class="grid gap-3 md:grid-cols-3">
+          <div class="rounded-xl border border-slate-200 p-4">
+            <p class="text-xs font-semibold uppercase text-slate-500">
+              Всего подходит
+            </p>
+            <p class="mt-1 text-2xl font-semibold text-slate-900">
+              {{ stats.total_count }}
+            </p>
           </div>
+
+          <div class="rounded-xl border border-slate-200 p-4">
+            <p class="text-xs font-semibold uppercase text-slate-500">
+              Размечено
+            </p>
+            <p class="mt-1 text-2xl font-semibold text-slate-900">
+              {{ stats.labeled_count }}
+            </p>
+          </div>
+
+          <div class="rounded-xl border border-slate-200 p-4">
+            <p class="text-xs font-semibold uppercase text-slate-500">
+              Осталось
+            </p>
+            <p class="mt-1 text-2xl font-semibold text-slate-900">
+              {{ stats.remaining_count }}
+            </p>
+          </div>
+        </div>
+
+        <div class="mt-4 flex flex-wrap gap-3">
+          <button
+            @click="fetchTask"
+            :disabled="loading || saving"
+            class="rounded-xl border border-slate-300 px-5 py-2 font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40">
+            Следующее письмо
+          </button>
+
+          <button
+            @click="exportLabels"
+            :disabled="exporting"
+            class="rounded-xl border border-slate-300 px-5 py-2 font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40">
+            {{ exporting ? "Экспортирую..." : "Экспорт CSV" }}
+          </button>
         </div>
       </section>
 
@@ -196,36 +284,23 @@ onMounted(() => {
               {{ fragment.text }}
             </p>
 
-            <div class="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
-              <div>
-                <label class="mb-1 block text-sm font-medium text-slate-700">
-                  Тональность
-                </label>
-                <select
-                  v-model="fragment.label"
-                  class="w-full rounded-xl border border-slate-300 px-4 py-2 text-slate-900 outline-none focus:border-slate-500"
+            <div class="mt-4 max-w-sm">
+              <label class="mb-1 block text-sm font-medium text-slate-700">
+                Тональность
+              </label>
+              <select
+                v-model="fragment.label"
+                class="w-full rounded-xl border border-slate-300 px-4 py-2 text-slate-900 outline-none focus:border-slate-500"
+              >
+                <option value="">Не выбрана</option>
+                <option
+                  v-for="option in labelOptions"
+                  :key="option.value"
+                  :value="option.value"
                 >
-                  <option value="">Не выбрана</option>
-                  <option
-                    v-for="option in labelOptions"
-                    :key="option.value"
-                    :value="option.value"
-                  >
-                    {{ option.label }}
-                  </option>
-                </select>
-              </div>
-
-              <div>
-                <label class="mb-1 block text-sm font-medium text-slate-700">
-                  Комментарий
-                </label>
-                <input
-                  v-model="fragment.comment"
-                  type="text"
-                  class="w-full rounded-xl border border-slate-300 px-4 py-2 text-slate-900 outline-none focus:border-slate-500"
-                />
-              </div>
+                  {{ option.label }}
+                </option>
+              </select>
             </div>
           </article>
         </section>

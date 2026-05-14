@@ -118,7 +118,6 @@ onMounted(() => {
           <table class="w-full border-collapse text-left">
             <thead class="bg-slate-100 text-sm text-slate-700">
               <tr>
-                <th class="w-[10%] px-5 py-3 font-semibold">Номер</th>
                 <th class="w-[40%] px-5 py-3 font-semibold">Название</th>
                 <th class="w-[20%] px-5 py-3 font-semibold">Автор</th>
                 <th class="w-[15%] px-5 py-3 font-semibold">ID источника</th>
@@ -132,9 +131,6 @@ onMounted(() => {
                 :key="volume.id"
                 class="hover:bg-slate-50"
               >
-                <td class="px-5 py-3 text-slate-700">
-                  {{ volume.number || "—" }}
-                </td>
 
                 <td class="max-w-md px-5 py-3">
                   <RouterLink

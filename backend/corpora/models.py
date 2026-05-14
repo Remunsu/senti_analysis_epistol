@@ -22,8 +22,8 @@ class Work(models.Model):
     note = models.CharField(max_length=50, blank=True)
     number = models.IntegerField(null=True, blank=True)
 
-    date_from = models.CharField(max_length=20, blank=True)
-    date_to = models.CharField(max_length=20, blank=True)
+    date_from = models.CharField(max_length=100, blank=True)
+    date_to = models.CharField(max_length=100, blank=True)
     place = models.CharField(max_length=50, blank=True)
     pages = models.CharField(max_length=50, blank=True)
 

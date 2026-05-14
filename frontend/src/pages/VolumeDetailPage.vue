@@ -146,20 +146,9 @@ onMounted(() => {
   <main class="p-6">
     <div class="mx-auto max-w-7xl">
       <div class="mb-6">
-        <RouterLink
-          to="/volumes"
-          class="text-sm font-medium text-slate-600 hover:text-slate-900"
-        >
-          Назад к томам
-        </RouterLink>
-
         <h1 class="text-3xl font-bold text-slate-900">
           {{ volume?.title || "Том" }}
         </h1>
-
-        <p v-if="volume?.title_short" class="mt-2 text-slate-600">
-          {{ volume.title_short }}
-        </p>
       </div>
 
       <div v-if="error" class="mb-4 rounded-xl bg-red-50 p-4 text-red-700">
