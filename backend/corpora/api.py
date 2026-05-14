@@ -14,8 +14,8 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.clickjacking import xframe_options_exempt
 from django_q.tasks import async_task
 from rest_framework import status
-from rest_framework.parsers import FormParser, MultiPartParser
-from rest_framework import viewsets, filters 
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework import filters, mixins, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.decorators import action
@@ -31,33 +31,54 @@ from .services.sentiment_analyzer import MODEL_DISPLAY_NAME
 from .services.tei_parser import parse_volume
 
 
-class VolumeViewSet(viewsets.ReadOnlyModelViewSet):
+class EditableModelViewSet(
+    mixins.ListModelMixin,
+    mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin,
+    viewsets.GenericViewSet,
+):
+    pass
+
+
+class VolumeViewSet(EditableModelViewSet, mixins.DestroyModelMixin):
     queryset = Volume.objects.annotate(works_count=Count("works")).order_by("number", "id")
     serializer_class = VolumeSerializer
-    parser_classes = [MultiPartParser, FormParser]
-    facsimile_extensions = {".pdf", ".djvu", ".djv"}
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
+    pdf_source_extensions = {".pdf", ".djvu", ".djv"}
 
-    @action(detail=True, methods=["post"], url_path="facsimile")
-    def upload_facsimile(self, request, pk=None):
+    def perform_destroy(self, instance):
+        xml_file = instance.xml_file
+        pdf_file = instance.facsimile_file
+
+        instance.delete()
+
+        if xml_file:
+            xml_file.delete(save=False)
+
+        if pdf_file:
+            pdf_file.delete(save=False)
+
+    @action(detail=True, methods=["post"], url_path="pdf")
+    def upload_pdf(self, request, pk=None):
         volume = self.get_object()
-        facsimile_file = request.FILES.get("file")
+        source_file = request.FILES.get("file")
 
-        if not facsimile_file:
+        if not source_file:
             return Response(
                 {"detail": "Загрузите PDF или DJVU-файл"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        extension = Path(facsimile_file.name).suffix.lower()
+        extension = Path(source_file.name).suffix.lower()
 
-        if extension not in self.facsimile_extensions:
+        if extension not in self.pdf_source_extensions:
             return Response(
                 {"detail": "Можно загрузить только PDF, DJVU или DJV"},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
         try:
-            save_volume_facsimile(volume, facsimile_file, extension)
+            save_volume_pdf(volume, source_file, extension)
         except DjvuConversionError as exc:
             return Response(
                 {"detail": str(exc)},
@@ -67,8 +88,8 @@ class VolumeViewSet(viewsets.ReadOnlyModelViewSet):
         return Response(VolumeSerializer(volume, context={"request": request}).data)
 
     @method_decorator(xframe_options_exempt)
-    @action(detail=True, methods=["get"], url_path="facsimile-file")
-    def facsimile_file(self, request, pk=None):
+    @action(detail=True, methods=["get"], url_path="pdf-file")
+    def pdf_file(self, request, pk=None):
         volume = self.get_object()
 
         if not volume.facsimile_file:
@@ -77,7 +98,7 @@ class VolumeViewSet(viewsets.ReadOnlyModelViewSet):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        content_type = get_facsimile_content_type(volume.facsimile_file.name)
+        content_type = get_pdf_content_type(volume.facsimile_file.name)
         file_handle = volume.facsimile_file.open("rb")
 
         return FileResponse(
@@ -88,7 +109,7 @@ class VolumeViewSet(viewsets.ReadOnlyModelViewSet):
         )
 
 
-def get_facsimile_content_type(file_name):
+def get_pdf_content_type(file_name):
     extension = Path(file_name).suffix.lower()
 
     if extension == ".pdf":
@@ -104,19 +125,19 @@ class DjvuConversionError(Exception):
     pass
 
 
-def save_volume_facsimile(volume, facsimile_file, extension):
+def save_volume_pdf(volume, source_file, extension):
     if extension == ".pdf":
         if volume.facsimile_file:
             volume.facsimile_file.delete(save=False)
 
-        volume.facsimile_file = facsimile_file
+        volume.facsimile_file = source_file
         volume.save(update_fields=["facsimile_file"])
         return
 
-    save_converted_djvu(volume, facsimile_file)
+    save_converted_djvu(volume, source_file)
 
 
-def save_converted_djvu(volume, facsimile_file):
+def save_converted_djvu(volume, source_file):
     ddjvu_path = shutil.which("ddjvu")
 
     if not ddjvu_path:
@@ -124,16 +145,16 @@ def save_converted_djvu(volume, facsimile_file):
             "Для загрузки DJVU установите DjVuLibre: нужна команда ddjvu для конвертации в PDF."
         )
 
-    source_name = get_valid_filename(Path(facsimile_file.name).stem) or "facsimile"
+    source_name = get_valid_filename(Path(source_file.name).stem) or "volume"
     pdf_name = f"{source_name}.pdf"
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp_path = Path(temp_dir)
-        input_path = temp_path / f"{source_name}{Path(facsimile_file.name).suffix.lower()}"
+        input_path = temp_path / f"{source_name}{Path(source_file.name).suffix.lower()}"
         output_path = temp_path / pdf_name
 
         with input_path.open("wb") as target:
-            for chunk in facsimile_file.chunks():
+            for chunk in source_file.chunks():
                 target.write(chunk)
 
         try:
@@ -860,7 +881,7 @@ class SentimentAnalysisRunsView(APIView):
         })
 
 
-class WorkViewSet(WorkFilterMixin, viewsets.ReadOnlyModelViewSet):
+class WorkViewSet(WorkFilterMixin, EditableModelViewSet):
     queryset = Work.objects.select_related("volume").all().order_by("id")
 
     filter_backends = [

@@ -1,18 +1,24 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue"
-import { RouterLink, useRoute } from "vue-router"
+import { RouterLink, useRoute, useRouter } from "vue-router"
 import { API_BASE_URL } from "../api"
 import PaginationControls from "../components/PaginationControls.vue"
 
 const route = useRoute()
+const router = useRouter()
 
 const volume = ref(null)
 const works = ref([])
 const loading = ref(false)
 const worksLoading = ref(false)
-const facsimileUploading = ref(false)
+const pdfUploading = ref(false)
+const saving = ref(false)
+const deleting = ref(false)
+const isEditing = ref(false)
 const error = ref("")
-const facsimileInput = ref(null)
+const success = ref("")
+const pdfInput = ref(null)
+const volumeForm = ref(createEmptyVolumeForm())
 
 const currentPage = ref(1)
 const totalCount = ref(0)
@@ -38,10 +44,32 @@ const properties = computed(() => {
     ["Название", volume.value.title],
     ["Краткое название", volume.value.title_short],
     ["Автор", volume.value.author],
-    ["Факсимиле", volume.value.facsimile_name],
+    ["PDF", volume.value.pdf_name],
     ["Загружен", formatDateTime(volume.value.uploaded_at)],
-  ]
+  ].filter(([, value]) => hasPropertyValue(value))
 })
+
+const volumeFields = [
+  { key: "source_id", label: "ID источника" },
+  { key: "number", label: "Номер", type: "number" },
+  { key: "title", label: "Название" },
+  { key: "title_short", label: "Краткое название" },
+  { key: "author", label: "Автор" },
+]
+
+function createEmptyVolumeForm() {
+  return {
+    source_id: "",
+    number: "",
+    title: "",
+    title_short: "",
+    author: "",
+  }
+}
+
+function hasPropertyValue(value) {
+  return value !== null && value !== undefined && String(value).trim() !== ""
+}
 
 function formatDateTime(value) {
   if (!value) return ""
@@ -55,6 +83,8 @@ function formatDateTime(value) {
 async function fetchVolume() {
   loading.value = true
   error.value = ""
+  success.value = ""
+  isEditing.value = false
 
   try {
     const response = await fetch(`${API_BASE_URL}/volumes/${volumeId.value}/`)
@@ -64,10 +94,99 @@ async function fetchVolume() {
     }
 
     volume.value = await response.json()
+    fillVolumeForm()
   } catch (err) {
     error.value = err.message || "Неизвестная ошибка"
   } finally {
     loading.value = false
+  }
+}
+
+function fillVolumeForm() {
+  if (!volume.value) return
+
+  volumeForm.value = {
+    source_id: volume.value.source_id || "",
+    number: volume.value.number ?? "",
+    title: volume.value.title || "",
+    title_short: volume.value.title_short || "",
+    author: volume.value.author || "",
+  }
+}
+
+function startEditing() {
+  fillVolumeForm()
+  error.value = ""
+  success.value = ""
+  isEditing.value = true
+}
+
+function cancelEditing() {
+  fillVolumeForm()
+  isEditing.value = false
+}
+
+function buildVolumePayload() {
+  return {
+    ...volumeForm.value,
+    number: volumeForm.value.number === "" ? null : Number(volumeForm.value.number),
+  }
+}
+
+async function saveVolume() {
+  if (!volume.value || saving.value) return
+
+  saving.value = true
+  error.value = ""
+  success.value = ""
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/volumes/${volumeId.value}/`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(buildVolumePayload()),
+    })
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(data.detail || "Не удалось сохранить том")
+    }
+
+    volume.value = data
+    fillVolumeForm()
+    isEditing.value = false
+    success.value = "Том сохранен"
+  } catch (err) {
+    error.value = err.message || "Неизвестная ошибка"
+  } finally {
+    saving.value = false
+  }
+}
+
+async function deleteVolume() {
+  if (!volume.value || deleting.value) return
+  if (!window.confirm("Удалить этот том и все его произведения?")) return
+
+  deleting.value = true
+  error.value = ""
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/volumes/${volumeId.value}/`, {
+      method: "DELETE",
+    })
+
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}))
+      throw new Error(data.detail || "Не удалось удалить том")
+    }
+
+    router.push({ name: "volumes" })
+  } catch (err) {
+    error.value = err.message || "Неизвестная ошибка"
+  } finally {
+    deleting.value = false
   }
 }
 
@@ -110,23 +229,23 @@ async function fetchWorks(page = 1) {
   }
 }
 
-function openFacsimilePicker() {
-  facsimileInput.value?.click()
+function openPdfPicker() {
+  pdfInput.value?.click()
 }
 
-async function uploadFacsimile(event) {
+async function uploadPdf(event) {
   const file = event.target.files?.[0]
 
   event.target.value = ""
 
-  if (!file || facsimileUploading.value) return
+  if (!file || pdfUploading.value) return
 
-  if (!isAllowedFacsimileFile(file)) {
+  if (!isAllowedPdfSourceFile(file)) {
     error.value = "Можно загрузить только PDF, DJVU или DJV"
     return
   }
 
-  facsimileUploading.value = true
+  pdfUploading.value = true
   error.value = ""
 
   const formData = new FormData()
@@ -134,7 +253,7 @@ async function uploadFacsimile(event) {
   formData.append("file", file)
 
   try {
-    const response = await fetch(`${API_BASE_URL}/volumes/${volumeId.value}/facsimile/`, {
+    const response = await fetch(`${API_BASE_URL}/volumes/${volumeId.value}/pdf/`, {
       method: "POST",
       body: formData,
     })
@@ -145,14 +264,15 @@ async function uploadFacsimile(event) {
     }
 
     volume.value = data
+    fillVolumeForm()
   } catch (err) {
     error.value = err.message || "Неизвестная ошибка"
   } finally {
-    facsimileUploading.value = false
+    pdfUploading.value = false
   }
 }
 
-function isAllowedFacsimileFile(file) {
+function isAllowedPdfSourceFile(file) {
   const name = file.name.toLowerCase()
 
   return name.endsWith(".pdf") || name.endsWith(".djvu") || name.endsWith(".djv")
@@ -196,14 +316,58 @@ onMounted(() => {
 <template>
   <main class="p-6">
     <div class="mx-auto max-w-7xl">
-      <div class="mb-6">
+      <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
         <h1 class="text-3xl font-bold text-slate-900">
           {{ volume?.title || "Том" }}
         </h1>
+
+        <div v-if="volume" class="flex flex-wrap gap-3">
+          <button
+            v-if="!isEditing"
+            type="button"
+            @click="startEditing"
+            class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+          >
+            Редактировать
+          </button>
+
+          <template v-else>
+            <button
+              type="button"
+              @click="saveVolume"
+              :disabled="saving"
+              class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {{ saving ? "Сохраняю..." : "Сохранить" }}
+            </button>
+
+            <button
+              type="button"
+              @click="cancelEditing"
+              :disabled="saving"
+              class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Отменить
+            </button>
+          </template>
+
+          <button
+            type="button"
+            @click="deleteVolume"
+            :disabled="deleting || saving"
+            class="rounded-xl border border-red-200 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {{ deleting ? "Удаляю..." : "Удалить" }}
+          </button>
+        </div>
       </div>
 
       <div v-if="error" class="mb-4 rounded-xl bg-red-50 p-4 text-red-700">
         {{ error }}
+      </div>
+
+      <div v-if="success" class="mb-4 rounded-xl bg-emerald-50 p-4 text-emerald-700">
+        {{ success }}
       </div>
 
       <div v-if="loading" class="rounded-2xl bg-white p-5 text-slate-500 shadow-sm ring-1 ring-slate-200">
@@ -219,8 +383,8 @@ onMounted(() => {
 
             <div class="flex flex-wrap items-center gap-3">
               <a
-                v-if="volume.facsimile_url"
-                :href="volume.facsimile_url"
+                v-if="volume.pdf_url"
+                :href="volume.pdf_url"
                 target="_blank"
                 rel="noreferrer"
                 class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
@@ -230,24 +394,44 @@ onMounted(() => {
 
               <button
                 type="button"
-                @click="openFacsimilePicker"
-                :disabled="facsimileUploading"
+                @click="openPdfPicker"
+                :disabled="pdfUploading"
                 class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {{ facsimileUploading ? "Загружаю..." : "Загрузить PDF/DJVU" }}
+                {{ pdfUploading ? "Загружаю..." : "Загрузить PDF" }}
               </button>
 
               <input
-                ref="facsimileInput"
+                ref="pdfInput"
                 type="file"
                 accept=".pdf,.djvu,.djv,application/pdf,image/vnd.djvu"
                 class="hidden"
-                @change="uploadFacsimile"
+                @change="uploadPdf"
               />
             </div>
           </div>
 
-          <dl class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <form
+            v-if="isEditing"
+            class="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
+            @submit.prevent="saveVolume"
+          >
+            <div
+              v-for="field in volumeFields"
+              :key="field.key"
+            >
+              <label class="mb-1 block text-sm font-medium text-slate-700">
+                {{ field.label }}
+              </label>
+              <input
+                v-model="volumeForm[field.key]"
+                :type="field.type || 'text'"
+                class="w-full rounded-xl border border-slate-300 px-4 py-2 text-slate-900 outline-none focus:border-slate-500"
+              />
+            </div>
+          </form>
+
+          <dl v-else class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <div
               v-for="[label, value] in properties"
               :key="label"

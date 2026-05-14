@@ -7,13 +7,17 @@ const route = useRoute()
 
 const work = ref(null)
 const loading = ref(false)
+const saving = ref(false)
 const error = ref("")
+const success = ref("")
 const selectedSource = ref("text")
+const isEditing = ref(false)
+const workForm = ref(createEmptyWorkForm())
 
 const workId = computed(() => route.params.id)
-const facsimilePages = computed(() => parsePages(work.value?.pages || ""))
-const canPreviewFacsimile = computed(() => {
-  return work.value?.volume_facsimile_url && work.value?.volume_facsimile_kind === "pdf"
+const pdfPages = computed(() => parsePages(work.value?.pages || ""))
+const canPreviewPdf = computed(() => {
+  return work.value?.volume_pdf_url && work.value?.volume_pdf_kind === "pdf"
 })
 const visibleSourceTabs = computed(() => {
   const tabs = [
@@ -21,7 +25,7 @@ const visibleSourceTabs = computed(() => {
     { key: "xml", label: "XML" },
   ]
 
-  if (canPreviewFacsimile.value) {
+  if (canPreviewPdf.value) {
     tabs.push({ key: "pdf", label: "PDF" })
   }
 
@@ -34,6 +38,46 @@ const displayedContent = computed(() => {
 
   return selectedSource.value === "xml" ? work.value.raw_xml || "" : work.value.plain_text || ""
 })
+
+const workFieldGroups = [
+  [
+    { key: "source_id", label: "ID источника" },
+    { key: "number", label: "Номер", type: "number" },
+    { key: "title", label: "Название" },
+    { key: "title_short", label: "Краткое название" },
+    { key: "title_desc", label: "Описание" },
+    { key: "author", label: "Автор" },
+  ],
+  [
+    { key: "genre", label: "Жанр" },
+    { key: "language", label: "Язык" },
+    { key: "date_from", label: "Дата от" },
+    { key: "date_to", label: "Дата до" },
+    { key: "place", label: "Место" },
+    { key: "pages", label: "Страницы" },
+    { key: "note", label: "Примечание" },
+  ],
+]
+
+function createEmptyWorkForm() {
+  return {
+    source_id: "",
+    note: "",
+    number: "",
+    date_from: "",
+    date_to: "",
+    place: "",
+    pages: "",
+    author: "",
+    language: "",
+    title_desc: "",
+    title_short: "",
+    title: "",
+    genre: "",
+    plain_text: "",
+    raw_xml: "",
+  }
+}
 
 const properties = computed(() => {
   if (!work.value) return []
@@ -124,19 +168,94 @@ function addPage(page, pages, seen) {
   pages.push(page)
 }
 
-function facsimilePageUrl(page) {
-  return `${work.value.volume_facsimile_url}#page=${page}&view=FitH`
+function pdfPageUrl(page) {
+  return `${work.value.volume_pdf_url}#page=${page}&view=FitH`
 }
 
 function selectSource(source) {
-  if (source === "pdf" && !canPreviewFacsimile.value) return
+  if (source === "pdf" && !canPreviewPdf.value) return
 
   selectedSource.value = source
+}
+
+function fillWorkForm() {
+  if (!work.value) return
+
+  workForm.value = {
+    source_id: work.value.source_id || "",
+    note: work.value.note || "",
+    number: work.value.number ?? "",
+    date_from: work.value.date_from || "",
+    date_to: work.value.date_to || "",
+    place: work.value.place || "",
+    pages: work.value.pages || "",
+    author: work.value.author || "",
+    language: work.value.language || "",
+    title_desc: work.value.title_desc || "",
+    title_short: work.value.title_short || "",
+    title: work.value.title || "",
+    genre: work.value.genre || "",
+    plain_text: work.value.plain_text || "",
+    raw_xml: work.value.raw_xml || "",
+  }
+}
+
+function startEditing() {
+  fillWorkForm()
+  error.value = ""
+  success.value = ""
+  isEditing.value = true
+}
+
+function cancelEditing() {
+  fillWorkForm()
+  isEditing.value = false
+}
+
+function buildWorkPayload() {
+  return {
+    ...workForm.value,
+    number: workForm.value.number === "" ? null : Number(workForm.value.number),
+  }
+}
+
+async function saveWork() {
+  if (!work.value || saving.value) return
+
+  saving.value = true
+  error.value = ""
+  success.value = ""
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/works/${workId.value}/`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(buildWorkPayload()),
+    })
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(data.detail || "Не удалось сохранить произведение")
+    }
+
+    work.value = data
+    fillWorkForm()
+    isEditing.value = false
+    success.value = "Произведение сохранено"
+  } catch (err) {
+    error.value = err.message || "Неизвестная ошибка"
+  } finally {
+    saving.value = false
+  }
 }
 
 async function fetchWork() {
   loading.value = true
   error.value = ""
+  success.value = ""
+  isEditing.value = false
 
   try {
     const response = await fetch(`${API_BASE_URL}/works/${workId.value}/`)
@@ -146,6 +265,7 @@ async function fetchWork() {
     }
 
     work.value = await response.json()
+    fillWorkForm()
   } catch (err) {
     error.value = err.message || "Неизвестная ошибка"
   } finally {
@@ -157,11 +277,11 @@ watch(workId, () => {
   fetchWork()
 })
 
-watch(facsimilePages, (pages) => {
+watch(pdfPages, (pages) => {
   selectedPdfPage.value = pages[0] || null
 })
 
-watch(canPreviewFacsimile, (canPreview) => {
+watch(canPreviewPdf, (canPreview) => {
   if (!canPreview && selectedSource.value === "pdf") {
     selectedSource.value = "text"
   }
@@ -177,15 +297,50 @@ onMounted(() => {
     <div class="mx-auto max-w-7xl">
       <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
-
           <h1 class="mt-3 text-3xl font-bold text-slate-900">
             {{ work?.title || "Произведение" }}
           </h1>
+        </div>
+
+        <div v-if="work" class="flex flex-wrap gap-3">
+          <button
+            v-if="!isEditing"
+            type="button"
+            @click="startEditing"
+            class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+          >
+            Редактировать
+          </button>
+
+          <template v-else>
+            <button
+              type="button"
+              @click="saveWork"
+              :disabled="saving"
+              class="rounded-xl bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {{ saving ? "Сохраняю..." : "Сохранить" }}
+            </button>
+
+            <button
+              type="button"
+              @click="cancelEditing"
+              :disabled="saving"
+              class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              Отменить
+            </button>
+          </template>
+
         </div>
       </div>
 
       <div v-if="error" class="mb-4 rounded-xl bg-red-50 p-4 text-red-700">
         {{ error }}
+      </div>
+
+      <div v-if="success" class="mb-4 rounded-xl bg-emerald-50 p-4 text-emerald-700">
+        {{ success }}
       </div>
 
       <div v-if="loading" class="rounded-2xl bg-white p-5 text-slate-500 shadow-sm ring-1 ring-slate-200">
@@ -194,7 +349,51 @@ onMounted(() => {
 
       <template v-else-if="work">
         <section class="mb-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-          <dl class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          <form v-if="isEditing" class="space-y-6" @submit.prevent="saveWork">
+            <div
+              v-for="(group, groupIndex) in workFieldGroups"
+              :key="groupIndex"
+              class="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
+            >
+              <div
+                v-for="field in group"
+                :key="field.key"
+              >
+                <label class="mb-1 block text-sm font-medium text-slate-700">
+                  {{ field.label }}
+                </label>
+                <input
+                  v-model="workForm[field.key]"
+                  :type="field.type || 'text'"
+                  class="w-full rounded-xl border border-slate-300 px-4 py-2 text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+            </div>
+
+            <div class="grid gap-4 xl:grid-cols-2">
+              <div>
+                <label class="mb-1 block text-sm font-medium text-slate-700">
+                  Текст
+                </label>
+                <textarea
+                  v-model="workForm.plain_text"
+                  class="min-h-[28rem] w-full resize-y rounded-xl border border-slate-300 p-4 font-mono text-sm leading-6 text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+
+              <div>
+                <label class="mb-1 block text-sm font-medium text-slate-700">
+                  XML
+                </label>
+                <textarea
+                  v-model="workForm.raw_xml"
+                  class="min-h-[28rem] w-full resize-y rounded-xl border border-slate-300 p-4 font-mono text-sm leading-6 text-slate-900 outline-none focus:border-slate-500"
+                />
+              </div>
+            </div>
+          </form>
+
+          <dl v-else class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
             <div
               v-for="property in properties"
               :key="property.label"
@@ -219,7 +418,7 @@ onMounted(() => {
           </dl>
         </section>
 
-        <section class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+        <section v-if="!isEditing" class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
           <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
             <div>
               <h2 class="text-lg font-semibold text-slate-900">
@@ -235,8 +434,8 @@ onMounted(() => {
 
             <div class="flex flex-wrap items-center gap-3">
               <a
-                v-if="selectedSource === 'pdf' && work.volume_facsimile_url"
-                :href="work.volume_facsimile_url"
+                v-if="selectedSource === 'pdf' && work.volume_pdf_url"
+                :href="work.volume_pdf_url"
                 target="_blank"
                 rel="noreferrer"
                 class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
@@ -264,7 +463,7 @@ onMounted(() => {
           </div>
 
           <template v-if="selectedSource === 'pdf'">
-            <div v-if="facsimilePages.length === 0" class="p-5">
+            <div v-if="pdfPages.length === 0" class="p-5">
               <div class="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
                 У произведения не указаны страницы для показа.
               </div>
@@ -274,7 +473,7 @@ onMounted(() => {
               <aside class="border-b border-slate-200 p-4 xl:border-b-0 xl:border-r">
                 <div class="grid grid-cols-2 gap-2 xl:grid-cols-1">
                   <button
-                    v-for="page in facsimilePages"
+                    v-for="page in pdfPages"
                     :key="page"
                     type="button"
                     @click="selectedPdfPage = page"
@@ -292,7 +491,7 @@ onMounted(() => {
 
               <iframe
                 v-if="selectedPdfPage"
-                :src="facsimilePageUrl(selectedPdfPage)"
+                :src="pdfPageUrl(selectedPdfPage)"
                 :title="`Страница ${selectedPdfPage}`"
                 class="h-[72vh] min-h-[42rem] w-full border-0 bg-slate-100"
               />

@@ -175,6 +175,12 @@ def extract_work_data(tei_node, volume: Volume) -> dict:
     title_short = first_text(tei_node, './/tei:msContents/tei:msItem/tei:title[@type="short"]')
     title = first_text(tei_node, './/tei:msContents/tei:msItem/tei:title[@type="main"]')
 
+    if not title:
+        title = first_text(tei_node, "./tei:teiHeader/tei:fileDesc/tei:titleStmt/tei:title")
+
+    if not title_short:
+        title_short = title
+
     genre = first_text(tei_node, ".//tei:encodingDesc//tei:catDesc")
 
     raw_xml = etree.tostring(tei_node, encoding="unicode")

@@ -4,13 +4,26 @@ from .models import SentimentAnalysisRun, SentimentFragmentLabel, Volume, Work
 
 class VolumeSerializer(serializers.ModelSerializer):
     works_count = serializers.SerializerMethodField()
-    facsimile_url = serializers.SerializerMethodField()
-    facsimile_name = serializers.SerializerMethodField()
-    facsimile_kind = serializers.SerializerMethodField()
+    pdf_url = serializers.SerializerMethodField()
+    pdf_name = serializers.SerializerMethodField()
+    pdf_kind = serializers.SerializerMethodField()
 
     class Meta:
         model = Volume
-        fields = "__all__"
+        fields = [
+            "id",
+            "source_id",
+            "number",
+            "title",
+            "title_short",
+            "author",
+            "xml_file",
+            "uploaded_at",
+            "works_count",
+            "pdf_url",
+            "pdf_name",
+            "pdf_kind",
+        ]
 
     def get_works_count(self, obj):
         annotated_count = getattr(obj, "works_count", None)
@@ -20,14 +33,14 @@ class VolumeSerializer(serializers.ModelSerializer):
 
         return obj.works.count()
 
-    def get_facsimile_url(self, obj):
-        return build_volume_facsimile_url(obj, self.context.get("request"))
+    def get_pdf_url(self, obj):
+        return build_volume_pdf_url(obj, self.context.get("request"))
 
-    def get_facsimile_name(self, obj):
-        return get_facsimile_name(obj)
+    def get_pdf_name(self, obj):
+        return get_pdf_name(obj)
 
-    def get_facsimile_kind(self, obj):
-        return get_facsimile_kind(obj)
+    def get_pdf_kind(self, obj):
+        return get_pdf_kind(obj)
 
 
 class WorkListSerializer(serializers.ModelSerializer):
@@ -61,9 +74,9 @@ class WorkListSerializer(serializers.ModelSerializer):
 class WorkDetailSerializer(serializers.ModelSerializer):
     volume_title = serializers.CharField(source="volume.title", read_only=True)
     date = serializers.SerializerMethodField()
-    volume_facsimile_url = serializers.SerializerMethodField()
-    volume_facsimile_name = serializers.SerializerMethodField()
-    volume_facsimile_kind = serializers.SerializerMethodField()
+    volume_pdf_url = serializers.SerializerMethodField()
+    volume_pdf_name = serializers.SerializerMethodField()
+    volume_pdf_kind = serializers.SerializerMethodField()
 
     class Meta:
         model = Work
@@ -72,14 +85,14 @@ class WorkDetailSerializer(serializers.ModelSerializer):
     def get_date(self, obj):
         return format_work_date(obj)
 
-    def get_volume_facsimile_url(self, obj):
-        return build_volume_facsimile_url(obj.volume, self.context.get("request"))
+    def get_volume_pdf_url(self, obj):
+        return build_volume_pdf_url(obj.volume, self.context.get("request"))
 
-    def get_volume_facsimile_name(self, obj):
-        return get_facsimile_name(obj.volume)
+    def get_volume_pdf_name(self, obj):
+        return get_pdf_name(obj.volume)
 
-    def get_volume_facsimile_kind(self, obj):
-        return get_facsimile_kind(obj.volume)
+    def get_volume_pdf_kind(self, obj):
+        return get_pdf_kind(obj.volume)
 
 
 def format_work_date(work):
@@ -89,11 +102,11 @@ def format_work_date(work):
     return work.date_from or work.date_to
 
 
-def build_volume_facsimile_url(volume, request=None):
+def build_volume_pdf_url(volume, request=None):
     if not volume.facsimile_file:
         return ""
 
-    path = f"/api/volumes/{volume.id}/facsimile-file/"
+    path = f"/api/volumes/{volume.id}/pdf-file/"
 
     if request:
         return request.build_absolute_uri(path)
@@ -101,15 +114,15 @@ def build_volume_facsimile_url(volume, request=None):
     return path
 
 
-def get_facsimile_name(volume):
+def get_pdf_name(volume):
     if not volume.facsimile_file:
         return ""
 
     return volume.facsimile_file.name.rsplit("/", 1)[-1]
 
 
-def get_facsimile_kind(volume):
-    name = get_facsimile_name(volume).lower()
+def get_pdf_kind(volume):
+    name = get_pdf_name(volume).lower()
 
     if name.endswith(".pdf"):
         return "pdf"
