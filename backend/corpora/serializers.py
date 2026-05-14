@@ -3,9 +3,19 @@ from .models import SentimentAnalysisRun, SentimentFragmentLabel, Volume, Work
 
 
 class VolumeSerializer(serializers.ModelSerializer):
+    works_count = serializers.SerializerMethodField()
+
     class Meta:
         model = Volume
         fields = "__all__"
+
+    def get_works_count(self, obj):
+        annotated_count = getattr(obj, "works_count", None)
+
+        if annotated_count is not None:
+            return annotated_count
+
+        return obj.works.count()
 
 
 class WorkListSerializer(serializers.ModelSerializer):

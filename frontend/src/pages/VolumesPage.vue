@@ -118,9 +118,10 @@ onMounted(() => {
           <table class="w-full border-collapse text-left">
             <thead class="bg-slate-100 text-sm text-slate-700">
               <tr>
-                <th class="w-[40%] px-5 py-3 font-semibold">Название</th>
-                <th class="w-[20%] px-5 py-3 font-semibold">Автор</th>
+                <th class="w-[35%] px-5 py-3 font-semibold">Название</th>
+                <th class="w-[18%] px-5 py-3 font-semibold">Автор</th>
                 <th class="w-[15%] px-5 py-3 font-semibold">ID источника</th>
+                <th class="w-[12%] px-5 py-3 font-semibold">Работ</th>
                 <th class="w-[15%] px-5 py-3 font-semibold">Загружен</th>
               </tr>
             </thead>
@@ -150,6 +151,10 @@ onMounted(() => {
 
                 <td class="px-5 py-3 text-sm text-slate-700">
                   {{ volume.source_id || "—" }}
+                </td>
+
+                <td class="px-5 py-3 text-sm text-slate-700">
+                  {{ volume.works_count ?? 0 }}
                 </td>
 
                 <td class="px-5 py-3 text-sm text-slate-700">

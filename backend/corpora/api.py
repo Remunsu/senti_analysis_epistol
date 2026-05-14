@@ -24,7 +24,7 @@ from .services.tei_parser import parse_volume
 
 
 class VolumeViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Volume.objects.all().order_by("number", "id")
+    queryset = Volume.objects.annotate(works_count=Count("works")).order_by("number", "id")
     serializer_class = VolumeSerializer
 
 

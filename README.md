@@ -1,5 +1,5 @@
 # Requirements
-- Python>=3.10
+- Python>=3.12
 - Node
 - PostgreSQL
 
@@ -40,6 +40,12 @@ npm install
 npm run build
 ```
 # Dev 
+Run backend, Django Q and frontend together:
+```
+python scripts/dev.py
+```
+
+Or run them manually in separate terminals:
 ```
 cd backend
 python manage.py runserver
