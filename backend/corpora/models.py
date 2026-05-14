@@ -20,10 +20,12 @@ class Work(models.Model):
 
     source_id = models.CharField(max_length=20)
     note = models.CharField(max_length=50, blank=True)
-    page_number = models.IntegerField(null=True, blank=True)
+    number = models.IntegerField(null=True, blank=True)
 
-    date = models.CharField(max_length=20, blank=True)
+    date_from = models.CharField(max_length=20, blank=True)
+    date_to = models.CharField(max_length=20, blank=True)
     place = models.CharField(max_length=50, blank=True)
+    pages = models.CharField(max_length=50, blank=True)
 
     author = models.CharField(max_length=50, blank=True)
     language = models.CharField(max_length=20, blank=True)

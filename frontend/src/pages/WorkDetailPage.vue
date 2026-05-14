@@ -24,19 +24,24 @@ const properties = computed(() => {
   return [
     ["ID источника", work.value.source_id],
     ["Том", work.value.volume_title || work.value.volume],
+    ["Номер", work.value.number],
     ["Название", work.value.title],
     ["Краткое название", work.value.title_short],
     ["Описание", work.value.title_desc],
     ["Автор", work.value.author],
     ["Жанр", work.value.genre],
     ["Дата", work.value.date],
+    ["Страницы", work.value.pages],
     ["Место", work.value.place],
     ["Язык", work.value.language],
-    ["Страница", work.value.page_number],
     ["Примечание", work.value.note],
     ["Создано", formatDateTime(work.value.created_at)],
-  ]
+  ].filter(([, value]) => hasPropertyValue(value))
 })
+
+function hasPropertyValue(value) {
+  return value !== null && value !== undefined && String(value).trim() !== ""
+}
 
 function formatDateTime(value) {
   if (!value) return ""
@@ -129,7 +134,7 @@ onMounted(() => {
                 {{ label }}
               </dt>
               <dd class="mt-1 break-words text-sm text-slate-900">
-                {{ value || "—" }}
+                {{ value }}
               </dd>
             </div>
           </dl>

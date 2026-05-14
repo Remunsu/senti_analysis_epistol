@@ -41,6 +41,28 @@ def to_int(value: str):
         return None
 
 
+def format_pages(values):
+    cleaned_values = [clean_text(str(value)) for value in values if clean_text(str(value))]
+
+    if not cleaned_values:
+        return ""
+
+    numeric_values = []
+
+    for value in cleaned_values:
+        if not value.isdigit():
+            return ", ".join(dict.fromkeys(cleaned_values))
+
+        numeric_values.append(int(value))
+
+    unique_numbers = sorted(set(numeric_values))
+
+    if len(unique_numbers) == 1:
+        return str(unique_numbers[0])
+
+    return f"{unique_numbers[0]}-{unique_numbers[-1]}"
+
+
 def parse_xml_file(path: str):
     text = Path(path).read_text(encoding="utf-8")
     text = re.sub(r'encoding="[^"]+"', 'encoding="UTF-8"', text, count=1)
@@ -131,10 +153,20 @@ def extract_tokens(work: Work, tei_node):
 
 def extract_work_data(tei_node, volume: Volume) -> dict:
     source_id = first_text(tei_node, ".//tei:sourceDesc//tei:msIdentifier/tei:idno")
-    page_number = to_int(first_attr(tei_node, ".//tei:sourceDesc//tei:head/tei:num/@value"))
+    number = to_int(first_attr(tei_node, ".//tei:sourceDesc//tei:head/tei:num/@value"))
 
-    date = first_attr(tei_node, ".//tei:origin/tei:origDate/@to")
+    date_from = first_attr(tei_node, ".//tei:origin/tei:origDate/@from")
+    date_to = first_attr(tei_node, ".//tei:origin/tei:origDate/@to")
+    date_when = first_attr(tei_node, ".//tei:origin/tei:origDate/@when")
+
+    if not date_from:
+        date_from = date_when or date_to
+
+    if not date_to:
+        date_to = date_when or date_from
+
     place = first_text(tei_node, ".//tei:origin/tei:origPlace")
+    pages = format_pages(tei_node.xpath(".//tei:milestone[@unit='sheet']/@n", namespaces=NS))
 
     author = first_text(tei_node, ".//tei:msContents/tei:msItem/tei:author")
     language = first_attr(tei_node, ".//tei:msContents/tei:msItem/tei:textLang/@otherLangs")
@@ -152,9 +184,11 @@ def extract_work_data(tei_node, volume: Volume) -> dict:
         "volume": volume,
         "source_id": source_id[:20],
         "note": "",
-        "page_number": page_number,
-        "date": date[:20],
+        "number": number,
+        "date_from": date_from[:20],
+        "date_to": date_to[:20],
         "place": place[:50],
+        "pages": pages[:50],
         "author": (author or volume.author)[:50],
         "language": language[:20],
         "title_desc": title_desc[:200],

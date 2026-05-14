@@ -76,7 +76,7 @@ async function fetchWorks(page = 1) {
 
   params.append("volume", volumeId.value)
   params.append("page", page)
-  params.append("ordering", "page_number")
+  params.append("ordering", "number")
 
   try {
     const response = await fetch(`${API_BASE_URL}/works/?${params.toString()}`)
@@ -216,7 +216,7 @@ onMounted(() => {
                   <th class="w-[15%] px-5 py-3 font-semibold">Автор</th>
                   <th class="w-[20%] px-5 py-3 font-semibold">Жанр</th>
                   <th class="w-[10%] px-5 py-3 font-semibold">Дата</th>
-                  <th class="w-[10%] px-5 py-3 font-semibold">Страница</th>
+                  <th class="w-[10%] px-5 py-3 font-semibold">Номер</th>
                 </tr>
               </thead>
 
@@ -251,7 +251,7 @@ onMounted(() => {
                   </td>
 
                   <td class="px-5 py-3 text-slate-700">
-                    {{ work.page_number || "—" }}
+                    {{ work.number || "—" }}
                   </td>
                 </tr>
 

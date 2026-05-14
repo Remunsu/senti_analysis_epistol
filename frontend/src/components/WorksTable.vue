@@ -52,7 +52,8 @@ function isWorkSelected(workId) {
               @change="emit('toggle-all-filtered')"
             />
           </th>
-          <th class="w-[45%] px-5 py-3 font-semibold">Название</th>
+          <th class="w-[10%] px-5 py-3 font-semibold">Номер</th>
+          <th class="w-[35%] px-5 py-3 font-semibold">Название</th>
           <th class="w-[15%] px-5 py-3 font-semibold">Автор</th>
           <th class="w-[20%] px-5 py-3 font-semibold">Жанр</th>
           <th class="w-[15%] px-5 py-3 font-semibold">Дата</th>
@@ -74,6 +75,10 @@ function isWorkSelected(workId) {
               :aria-label="`Выбрать работу ${work.title || work.id}`"
               @change="emit('toggle-work', work.id)"
             />
+          </td>
+
+          <td class="px-5 py-3 text-sm text-slate-700">
+            {{ work.number || "—" }}
           </td>
 
           <td class="max-w-md px-5 py-3">
@@ -105,7 +110,7 @@ function isWorkSelected(workId) {
         </tr>
 
         <tr v-if="!loading && works.length === 0">
-          <td colspan="5" class="px-5 py-8 text-center text-slate-500">
+          <td colspan="6" class="px-5 py-8 text-center text-slate-500">
             Произведения не найдены
           </td>
         </tr>

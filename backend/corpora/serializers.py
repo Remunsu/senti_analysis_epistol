@@ -10,6 +10,7 @@ class VolumeSerializer(serializers.ModelSerializer):
 
 class WorkListSerializer(serializers.ModelSerializer):
     volume_title = serializers.CharField(source="volume.title_short", read_only=True)
+    date = serializers.SerializerMethodField()
 
     class Meta:
         model = Work
@@ -23,18 +24,35 @@ class WorkListSerializer(serializers.ModelSerializer):
             "author",
             "genre",
             "date",
+            "date_from",
+            "date_to",
             "place",
+            "pages",
             "language",
-            "page_number",
+            "number",
         ]
+
+    def get_date(self, obj):
+        return format_work_date(obj)
 
 
 class WorkDetailSerializer(serializers.ModelSerializer):
     volume_title = serializers.CharField(source="volume.title", read_only=True)
+    date = serializers.SerializerMethodField()
 
     class Meta:
         model = Work
         fields = "__all__"
+
+    def get_date(self, obj):
+        return format_work_date(obj)
+
+
+def format_work_date(work):
+    if work.date_from and work.date_to and work.date_from != work.date_to:
+        return f"{work.date_from}-{work.date_to}"
+
+    return work.date_from or work.date_to
 
 
 class SentimentFragmentLabelSerializer(serializers.ModelSerializer):

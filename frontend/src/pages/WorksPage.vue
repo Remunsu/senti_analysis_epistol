@@ -17,7 +17,7 @@ const filterOptions = ref({
   languages: [],
   places: [],
   dates: [],
-  page_numbers: [],
+  numbers: [],
 })
 
 const search = ref("")
@@ -48,10 +48,10 @@ const filterFields = [
   { key: "language", label: "Язык" },
   { key: "place", label: "Место" },
   { key: "date", label: "Дата" },
-  { key: "page_number", label: "Страница" },
+  { key: "number", label: "Номер" },
 ]
 
-const rangeFilterKeys = new Set(["date", "page_number"])
+const rangeFilterKeys = new Set(["date", "number"])
 
 const filterFieldOptions = filterFields.map((field) => ({
   label: field.label,
@@ -108,7 +108,7 @@ function getFilterValueOptions(fieldInput) {
     language: filterOptions.value.languages,
     place: filterOptions.value.places,
     date: filterOptions.value.dates,
-    page_number: filterOptions.value.page_numbers,
+    number: filterOptions.value.numbers,
   }
 
   return (optionMap[field.key] || []).map((value) => ({
@@ -123,8 +123,8 @@ function isRangeFilter(fieldInput) {
   return field ? rangeFilterKeys.has(field.key) : false
 }
 
-function isPageRangeFilter(fieldInput) {
-  return getFilterField(fieldInput)?.key === "page_number"
+function isNumberRangeFilter(fieldInput) {
+  return getFilterField(fieldInput)?.key === "number"
 }
 
 function resolveFilterInput(fieldInput, value) {
@@ -193,10 +193,15 @@ function restorePageState() {
 
   try {
     const state = JSON.parse(rawState)
-    const restoredFilterRows = Array.isArray(state.filterRows) ? state.filterRows : []
+    const restoredFilterRows = Array.isArray(state.filterRows)
+      ? state.filterRows.map((row) => ({
+        ...row,
+        field: row.field === "page_number" || row.field === "Страница" ? "number" : row.field,
+      }))
+      : []
 
     search.value = state.search || ""
-    ordering.value = state.ordering || "id"
+    ordering.value = normalizeOrderingValue(state.ordering)
     filterRows.value = restoredFilterRows
     currentPage.value = Number(state.currentPage) || 1
     totalCount.value = Number(state.totalCount) || 0
@@ -212,6 +217,14 @@ function restorePageState() {
     sessionStorage.removeItem(STORAGE_KEY)
     return false
   }
+}
+
+function normalizeOrderingValue(value) {
+  if (value === "date") return "date_from"
+  if (value === "-date") return "-date_from"
+  if (value === "page_number") return "number"
+
+  return value || "id"
 }
 
 async function fetchVolumes() {
@@ -480,10 +493,10 @@ onMounted(async () => {
               <option value="id">По добавлению</option>
               <option value="title">Название А–Я</option>
               <option value="-title">Название Я–А</option>
-              <option value="date">Дата ↑</option>
-              <option value="-date">Дата ↓</option>
+              <option value="date_from">Дата ↑</option>
+              <option value="-date_from">Дата ↓</option>
               <option value="genre">Жанр</option>
-              <option value="page_number">Страница</option>
+              <option value="number">Номер</option>
             </select>
           </div>
         </div>
@@ -529,8 +542,8 @@ onMounted(async () => {
                   </label>
                   <input
                     v-model="row.from"
-                    :type="isPageRangeFilter(row.field) ? 'number' : 'text'"
-                    :inputmode="isPageRangeFilter(row.field) ? 'numeric' : 'text'"
+                    :type="isNumberRangeFilter(row.field) ? 'number' : 'text'"
+                    :inputmode="isNumberRangeFilter(row.field) ? 'numeric' : 'text'"
                     placeholder="Начало диапазона"
                     aria-label="Начало диапазона фильтра"
                     class="w-full rounded-xl border border-slate-300 px-4 py-2 text-slate-900 outline-none focus:border-slate-500"
@@ -543,8 +556,8 @@ onMounted(async () => {
                   </label>
                   <input
                     v-model="row.to"
-                    :type="isPageRangeFilter(row.field) ? 'number' : 'text'"
-                    :inputmode="isPageRangeFilter(row.field) ? 'numeric' : 'text'"
+                    :type="isNumberRangeFilter(row.field) ? 'number' : 'text'"
+                    :inputmode="isNumberRangeFilter(row.field) ? 'numeric' : 'text'"
                     placeholder="Конец диапазона"
                     aria-label="Конец диапазона фильтра"
                     class="w-full rounded-xl border border-slate-300 px-4 py-2 text-slate-900 outline-none focus:border-slate-500"

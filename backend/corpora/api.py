@@ -16,6 +16,7 @@ from .serializers import (
     VolumeSerializer,
     WorkListSerializer,
     WorkDetailSerializer,
+    format_work_date,
 )
 from .services.sentiment_analyzer import MODEL_DISPLAY_NAME
 from .services.tei_parser import parse_volume
@@ -237,13 +238,13 @@ class WorkFilterMixin:
             if values:
                 queryset = queryset.filter(**{f"{field}__in": values})
 
-        date_query = self.build_range_query("date", params)
+        date_query = self.build_date_query(params)
         if date_query:
             queryset = queryset.filter(date_query)
 
-        page_query = self.build_range_query("page_number", params, numeric=True)
-        if page_query:
-            queryset = queryset.filter(page_query)
+        number_query = self.build_range_query("number", params, numeric=True)
+        if number_query:
+            queryset = queryset.filter(number_query)
 
         search_value = params.get("search", "")
         if search_value:
@@ -288,6 +289,53 @@ class WorkFilterMixin:
                 query |= range_query
 
         return query
+
+    def build_date_query(self, params):
+        exact_values = self.clean_filter_values(params.getlist("date"))
+        range_values = params.getlist("date_range")
+        from_values = self.clean_filter_values(params.getlist("date_from"))
+        to_values = self.clean_filter_values(params.getlist("date_to"))
+
+        query = Q()
+
+        for value in exact_values:
+            query |= Q(date_from=value) | Q(date_to=value)
+
+        for value in range_values:
+            if ".." not in value:
+                continue
+
+            from_value, to_value = value.split("..", 1)
+            range_query = self.make_date_overlap_query(from_value, to_value)
+
+            if range_query:
+                query |= range_query
+
+        max_length = max(len(from_values), len(to_values))
+
+        for index in range(max_length):
+            from_value = from_values[index] if index < len(from_values) else ""
+            to_value = to_values[index] if index < len(to_values) else ""
+            range_query = self.make_date_overlap_query(from_value, to_value)
+
+            if range_query:
+                query |= range_query
+
+        return query
+
+    def make_date_overlap_query(self, from_value, to_value):
+        from_value = clean_filter_value(from_value)
+        to_value = clean_filter_value(to_value)
+
+        range_query = Q()
+
+        if from_value:
+            range_query &= Q(date_to__gte=from_value)
+
+        if to_value:
+            range_query &= Q(date_from__lte=to_value)
+
+        return range_query
 
     def make_range_query(self, field: str, from_value, to_value, numeric: bool = False):
         from_values = self.clean_filter_values([from_value], numeric)
@@ -435,7 +483,8 @@ class SentimentAnalysisResultsView(APIView):
             "work_id",
             "work__title",
             "work__author",
-            "work__date",
+            "work__date_from",
+            "work__date_to",
             "work__genre",
             "work__place",
         ).annotate(
@@ -457,8 +506,10 @@ class SentimentAnalysisResultsView(APIView):
                     "work_id": result["work_id"],
                     "title": result["work__title"],
                     "author": result["work__author"],
-                    "date": result["work__date"],
-                    "year": self.extract_date_group_label(result["work__date"]),
+                    "date": self.format_result_date(result),
+                    "date_from": result["work__date_from"],
+                    "date_to": result["work__date_to"],
+                    "year": self.extract_date_group_label(self.format_result_date(result)),
                     "genre": result["work__genre"],
                     "place": result["work__place"],
                     "segments_count": result["segments_count"],
@@ -474,6 +525,15 @@ class SentimentAnalysisResultsView(APIView):
             )
 
         return summaries
+
+    def format_result_date(self, result):
+        date_from = result["work__date_from"]
+        date_to = result["work__date_to"]
+
+        if date_from and date_to and date_from != date_to:
+            return f"{date_from}-{date_to}"
+
+        return date_from or date_to
 
     def extract_date_group_label(self, date_value):
         date_text = str(date_value or "").strip()
@@ -584,8 +644,9 @@ class WorkViewSet(WorkFilterMixin, viewsets.ReadOnlyModelViewSet):
         "title",
         "author",
         "genre",
-        "date",
-        "page_number",
+        "date_from",
+        "date_to",
+        "number",
     ]
 
     def get_queryset(self):
@@ -625,15 +686,22 @@ class WorkViewSet(WorkFilterMixin, viewsets.ReadOnlyModelViewSet):
                 .order_by("place")
             ),
             "dates": list(
-                Work.objects.exclude(date="")
-                .values_list("date", flat=True)
-                .distinct()
-                .order_by("date")
+                sorted(
+                    {
+                        format_work_date(work)
+                        for work in Work.objects.exclude(date_from="", date_to="")
+                        if format_work_date(work)
+                    }
+                )
             ),
-            "page_numbers": list(
-                Work.objects.exclude(page_number__isnull=True)
-                .values_list("page_number", flat=True)
+            "numbers": list(
+                Work.objects.exclude(number__isnull=True)
+                .values_list("number", flat=True)
                 .distinct()
-                .order_by("page_number")
+                .order_by("number")
             ),
         })
+
+
+def clean_filter_value(value):
+    return str(value or "").strip()
