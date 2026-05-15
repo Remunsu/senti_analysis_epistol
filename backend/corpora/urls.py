@@ -1,6 +1,7 @@
 from django.urls import path
 from rest_framework.routers import DefaultRouter
 from .api import (
+    SentimentComparisonView,
     SentimentAnalysisRunsView,
     SentimentAnalysisResultsView,
     SentimentAnalysisView,
@@ -21,6 +22,11 @@ urlpatterns = [
     path("annotations/skip/", SentimentAnnotationSkipView.as_view()),
     path("annotations/task/", SentimentAnnotationTaskView.as_view()),
     path("sentiment/analyze/", SentimentAnalysisView.as_view()),
+    path("sentiment/compare/", SentimentComparisonView.as_view()),
+    path(
+        "sentiment/compare/<int:baseline_run_id>/<int:candidate_run_id>/",
+        SentimentComparisonView.as_view(),
+    ),
     path("sentiment/runs/", SentimentAnalysisRunsView.as_view()),
     path("sentiment/results/", SentimentAnalysisResultsView.as_view()),
     path("sentiment/results/<int:run_id>/", SentimentAnalysisResultsView.as_view()),

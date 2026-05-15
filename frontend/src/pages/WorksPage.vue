@@ -26,6 +26,7 @@ const filterRows = ref([])
 
 const loading = ref(false)
 const analyzing = ref(false)
+const comparing = ref(false)
 const error = ref("")
 
 const currentPage = ref(1)
@@ -340,11 +341,7 @@ async function analyzeSelectedWorks() {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        all_filtered: allFilteredSelected.value,
-        filters_query: allFilteredSelected.value ? buildAnalysisFilterParams().toString() : "",
-        work_ids: allFilteredSelected.value ? [] : [...selectedWorkIds.value],
-      }),
+      body: JSON.stringify(buildAnalysisRequestBody()),
     })
     const data = await readApiResponse(response, "Не удалось выполнить анализ")
 
@@ -357,6 +354,48 @@ async function analyzeSelectedWorks() {
     error.value = err.message || "Неизвестная ошибка"
   } finally {
     analyzing.value = false
+  }
+}
+
+function buildAnalysisRequestBody() {
+  return {
+    all_filtered: allFilteredSelected.value,
+    filters_query: allFilteredSelected.value ? buildAnalysisFilterParams().toString() : "",
+    work_ids: allFilteredSelected.value ? [] : [...selectedWorkIds.value],
+  }
+}
+
+async function compareSelectedWorks() {
+  if (!selectedWorksCount.value || comparing.value) return
+
+  comparing.value = true
+  error.value = ""
+
+  try {
+    const response = await fetch(`${API_BASE_URL}/sentiment/compare/`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(buildAnalysisRequestBody()),
+    })
+    const data = await readApiResponse(response, "Не удалось запустить сравнение")
+
+    if (!response.ok) {
+      throw new Error(data.detail || "Не удалось запустить сравнение")
+    }
+
+    router.push({
+      name: "sentiment-comparison",
+      params: {
+        baselineRunId: data.baseline.id,
+        candidateRunId: data.candidate.id,
+      },
+    })
+  } catch (err) {
+    error.value = err.message || "Неизвестная ошибка"
+  } finally {
+    comparing.value = false
   }
 }
 
@@ -626,13 +665,23 @@ onMounted(async () => {
             Обновление...
           </p>
           
-          <button
-            @click="analyzeSelectedWorks"
-            :disabled="selectedWorksCount === 0 || analyzing"
-            class="rounded-xl bg-slate-900 px-5 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {{ analyzing ? "Анализирую..." : "Анализировать выбранные" }}
-          </button>
+          <div class="flex flex-wrap gap-3">
+            <button
+              @click="compareSelectedWorks"
+              :disabled="selectedWorksCount === 0 || comparing || analyzing"
+              class="rounded-xl border border-slate-300 px-5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {{ comparing ? "Сравниваю..." : "Сравнить разбиения" }}
+            </button>
+
+            <button
+              @click="analyzeSelectedWorks"
+              :disabled="selectedWorksCount === 0 || analyzing || comparing"
+              class="rounded-xl bg-slate-900 px-5 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {{ analyzing ? "Анализирую..." : "Анализировать выбранные" }}
+            </button>
+          </div>
         </div>
 
         <WorksTable
