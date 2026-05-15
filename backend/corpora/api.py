@@ -447,6 +447,7 @@ class SentimentAnnotationExportView(SentimentAnnotationCriteriaMixin, APIView):
     def get(self, request):
         response = HttpResponse(content_type="text/csv; charset=utf-8")
         response["Content-Disposition"] = 'attachment; filename="sentiment_annotations.csv"'
+        response.write("\ufeff")
 
         writer = csv.writer(response)
         writer.writerow([
