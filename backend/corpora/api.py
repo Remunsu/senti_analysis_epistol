@@ -33,6 +33,7 @@ from .serializers import (
     WorkListSerializer,
     WorkDetailSerializer,
     format_work_date,
+    format_work_date_values,
 )
 from .services.sentiment_analyzer import MODEL_DISPLAY_NAME
 from .services.text_segments import (
@@ -926,15 +927,7 @@ class WorkViewSet(WorkFilterMixin, EditableModelViewSet):
     queryset = Work.objects.select_related("volume").all().order_by("id")
 
     filter_backends = [
-        filters.SearchFilter,
         filters.OrderingFilter,
-    ]
-
-    search_fields = [
-        "title",
-        "title_short",
-        "title_desc",
-        "plain_text",
     ]
 
     ordering_fields = [
@@ -949,7 +942,12 @@ class WorkViewSet(WorkFilterMixin, EditableModelViewSet):
 
     def get_queryset(self):
         queryset = super().get_queryset()
-        return self.apply_work_filters(queryset, self.request.query_params)
+        queryset = self.apply_work_filters(queryset, self.request.query_params)
+
+        if self.action == "list":
+            queryset = queryset.defer("plain_text", "raw_xml")
+
+        return queryset
 
     def get_serializer_class(self):
         if self.action == "list":
@@ -986,9 +984,13 @@ class WorkViewSet(WorkFilterMixin, EditableModelViewSet):
             "dates": list(
                 sorted(
                     {
-                        format_work_date(work)
-                        for work in Work.objects.exclude(date_from="", date_to="")
-                        if format_work_date(work)
+                        format_work_date_values(date_from, date_to)
+                        for date_from, date_to in (
+                            Work.objects.exclude(date_from="", date_to="")
+                            .values_list("date_from", "date_to")
+                            .distinct()
+                        )
+                        if format_work_date_values(date_from, date_to)
                     }
                 )
             ),

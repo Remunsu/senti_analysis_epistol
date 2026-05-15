@@ -96,10 +96,14 @@ class WorkDetailSerializer(serializers.ModelSerializer):
 
 
 def format_work_date(work):
-    if work.date_from and work.date_to and work.date_from != work.date_to:
-        return f"{work.date_from}-{work.date_to}"
+    return format_work_date_values(work.date_from, work.date_to)
 
-    return work.date_from or work.date_to
+
+def format_work_date_values(date_from, date_to):
+    if date_from and date_to and date_from != date_to:
+        return f"{date_from}-{date_to}"
+
+    return date_from or date_to
 
 
 def build_volume_pdf_url(volume, request=None):

@@ -446,9 +446,11 @@ watch(filterRows, () => {
 onMounted(async () => {
   try {
     const restored = restorePageState()
-    await fetchVolumes()
-    await fetchFilterOptions()
-    await fetchWorks(restored ? currentPage.value : 1)
+    await Promise.all([
+      fetchWorks(restored ? currentPage.value : 1),
+      fetchVolumes(),
+      fetchFilterOptions(),
+    ])
     orderingWatcherReady = true
   } catch (err) {
     error.value = err.message || "Неизвестная ошибка"
