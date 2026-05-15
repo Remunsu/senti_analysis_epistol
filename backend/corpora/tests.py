@@ -1,9 +1,13 @@
 from types import SimpleNamespace
+from pathlib import Path
+from unittest.mock import patch
 
+from django.test import override_settings
 from django.test import SimpleTestCase
 from lxml import etree
 
 from .api import build_sentiment_comparison_rows, delete_volume_and_files
+from .services.sentiment_analyzer import get_model_display_name
 from .services.tei_parser import extract_work_data, format_pages
 from .services.text_segments import split_text_into_word_segments
 from .tasks import build_work_snapshot, split_work_text
@@ -181,6 +185,19 @@ class AnalysisSnapshotTests(SimpleTestCase):
         self.assertEqual(rows[0]["candidate"]["segments_count"], 2)
         self.assertEqual(rows[0]["mean_score_delta"], 0.25)
         self.assertEqual(rows[0]["segments_delta"], -2)
+
+
+class SentimentAnalyzerTests(SimpleTestCase):
+    @override_settings(BASE_DIR=Path("/tmp/project/backend"))
+    def test_model_display_name_uses_configured_model_folder(self):
+        with patch.dict("os.environ", {"SENTIMENT_MODEL_PATH": "models/my-sentiment-model"}):
+            self.assertEqual(get_model_display_name(), "my-sentiment-model")
+
+    @override_settings(BASE_DIR=Path("/tmp/project/backend"))
+    def test_model_display_name_requires_configured_model_path(self):
+        with patch.dict("os.environ", {}, clear=True):
+            with self.assertRaisesRegex(FileNotFoundError, "SENTIMENT_MODEL_PATH"):
+                get_model_display_name()
 
 
 class VolumeFileCleanupTests(SimpleTestCase):

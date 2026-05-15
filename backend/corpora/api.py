@@ -35,7 +35,7 @@ from .serializers import (
     format_work_date,
     format_work_date_values,
 )
-from .services.sentiment_analyzer import MODEL_DISPLAY_NAME
+from .services.sentiment_analyzer import get_model_display_name
 from .services.text_segments import (
     DEFAULT_MAX_SEGMENT_SIZE,
     DEFAULT_MIN_SEGMENT_SIZE,
@@ -679,7 +679,7 @@ class SentimentRunMixin(WorkFilterMixin):
     def create_run(self, work_ids, segment_size, max_segment_size=None, window_step=0):
         return SentimentAnalysisRun.objects.create(
             model_kind="rubert",
-            model_name=MODEL_DISPLAY_NAME,
+            model_name=get_model_display_name(),
             segment_size=segment_size,
             max_segment_size=max_segment_size,
             window_step=window_step,
