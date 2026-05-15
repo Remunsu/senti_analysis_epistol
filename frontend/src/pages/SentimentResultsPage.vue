@@ -328,16 +328,20 @@ onUnmounted(() => {
               <tbody class="divide-y divide-slate-200">
                 <tr
                   v-for="item in summary"
-                  :key="item.work_id"
+                  :key="item.original_work_id"
                   class="hover:bg-slate-50"
                 >
                   <td class="px-5 py-3">
                     <RouterLink
+                      v-if="item.work_id"
                       :to="{ name: 'work-detail', params: { id: item.work_id } }"
                       class="font-medium text-slate-900 hover:text-slate-600 hover:underline"
                     >
                       {{ item.title || "Без названия" }}
                     </RouterLink>
+                    <span v-else class="font-medium text-slate-900">
+                      {{ item.title || "Без названия" }}
+                    </span>
                     <p class="mt-1 text-sm text-slate-500">
                       {{ item.author || "Автор не указан" }} · {{ item.date || "Дата не указана" }}
                     </p>

@@ -1,6 +1,12 @@
-from django.test import SimpleTestCase
+from types import SimpleNamespace
 
+from django.test import SimpleTestCase
+from lxml import etree
+
+from .api import delete_volume_and_files
+from .services.tei_parser import extract_work_data, format_pages
 from .services.text_segments import split_text_into_word_segments
+from .tasks import build_work_snapshot, split_work_text
 
 
 class TextSegmentTests(SimpleTestCase):
@@ -78,3 +84,98 @@ class TextSegmentTests(SimpleTestCase):
 
         self.assertEqual(fragments[0]["word_end"], 6)
         self.assertEqual(fragments[0]["text"], "word1 word2 word3 Я.Я. word5 word6.")
+
+
+class TeiParserTests(SimpleTestCase):
+    def test_extract_work_data_falls_back_to_header_title(self):
+        tei_node = etree.fromstring(
+            """
+            <TEI xmlns="http://www.tei-c.org/ns/1.0">
+              <teiHeader>
+                <fileDesc>
+                  <titleStmt>
+                    <title>1764 сентября 20. Я.Я. Штелину</title>
+                  </titleStmt>
+                </fileDesc>
+              </teiHeader>
+              <text>
+                <body />
+              </text>
+            </TEI>
+            """.encode()
+        )
+
+        work_data = extract_work_data(tei_node, SimpleNamespace(author=""))
+
+        self.assertEqual(work_data["title"], "1764 сентября 20. Я.Я. Штелину")
+        self.assertEqual(work_data["title_short"], "1764 сентября 20. Я.Я. Штелину")
+
+    def test_format_pages_compacts_numeric_values(self):
+        self.assertEqual(format_pages(["10", "7", "8", "10"]), "7-10")
+
+
+class AnalysisSnapshotTests(SimpleTestCase):
+    def test_build_work_snapshot_captures_result_metadata(self):
+        work = SimpleNamespace(
+            id=12,
+            title="Письмо",
+            author="Автор",
+            date_from="1764-09-20",
+            date_to="1764-09-20",
+            genre="письмо",
+            place="Петербург",
+        )
+
+        self.assertEqual(
+            build_work_snapshot(work),
+            {
+                "original_work_id": 12,
+                "snapshot_title": "Письмо",
+                "snapshot_author": "Автор",
+                "snapshot_date_from": "1764-09-20",
+                "snapshot_date_to": "1764-09-20",
+                "snapshot_genre": "письмо",
+                "snapshot_place": "Петербург",
+            },
+        )
+
+    def test_split_work_text_keeps_legacy_window_runs_compatible(self):
+        run = SimpleNamespace(segment_size=4, max_segment_size=None, window_step=2)
+
+        fragments = split_work_text("one two three four five six", run)
+
+        self.assertEqual([fragment["word_start"] for fragment in fragments], [0, 2])
+
+
+class VolumeFileCleanupTests(SimpleTestCase):
+    def test_delete_volume_and_files_removes_stored_files(self):
+        xml_file = FakeFile()
+        pdf_file = FakeFile()
+        volume = FakeVolume(xml_file, pdf_file)
+
+        delete_volume_and_files(volume)
+
+        self.assertTrue(volume.deleted)
+        self.assertEqual(xml_file.delete_calls, [False])
+        self.assertEqual(pdf_file.delete_calls, [False])
+
+
+class FakeFile:
+    def __init__(self):
+        self.delete_calls = []
+
+    def __bool__(self):
+        return True
+
+    def delete(self, save=False):
+        self.delete_calls.append(save)
+
+
+class FakeVolume:
+    def __init__(self, xml_file, pdf_file):
+        self.xml_file = xml_file
+        self.facsimile_file = pdf_file
+        self.deleted = False
+
+    def delete(self):
+        self.deleted = True

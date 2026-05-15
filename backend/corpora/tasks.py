@@ -10,7 +10,13 @@ def run_sentiment_analysis(run_id, work_ids, *legacy_segmentation_args):
 
     try:
         run = SentimentAnalysisRun.objects.get(id=run_id)
-        works = Work.objects.filter(id__in=work_ids).exclude(plain_text="").only("id", "plain_text").order_by("id")
+        works = (
+            Work.objects
+            .filter(id__in=work_ids)
+            .exclude(plain_text="")
+            .only("id", "plain_text", "title", "author", "date_from", "date_to", "genre", "place")
+            .order_by("id")
+        )
         results_count = 0
 
         SentimentAnalysisResult.objects.filter(run=run).delete()
@@ -18,11 +24,13 @@ def run_sentiment_analysis(run_id, work_ids, *legacy_segmentation_args):
         for work in works:
             fragments = split_work_text(work.plain_text, run)
             analysis_results = analyze_fragments(fragments)
+            snapshot = build_work_snapshot(work)
 
             result_objects = [
                 SentimentAnalysisResult(
                     run=run,
                     work=work,
+                    **snapshot,
                     segment_index=result["segment_index"],
                     word_start=result["word_start"],
                     word_end=result["word_end"],
@@ -60,3 +68,15 @@ def split_work_text(text, run):
 
     legacy_window_step = run.window_step or run.segment_size
     return split_text_into_sliding_word_segments(text, run.segment_size, legacy_window_step)
+
+
+def build_work_snapshot(work):
+    return {
+        "original_work_id": work.id,
+        "snapshot_title": work.title,
+        "snapshot_author": work.author,
+        "snapshot_date_from": work.date_from,
+        "snapshot_date_to": work.date_to,
+        "snapshot_genre": work.genre,
+        "snapshot_place": work.place,
+    }

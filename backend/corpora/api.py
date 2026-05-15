@@ -6,7 +6,7 @@ import tempfile
 from pathlib import Path
 
 from django.core.files import File
-from django.db.models import Count, Q
+from django.db.models import Count, Max, Q
 from django.db import transaction
 from django.http import FileResponse, HttpResponse, QueryDict
 from django.utils.text import get_valid_filename
@@ -59,16 +59,7 @@ class VolumeViewSet(EditableModelViewSet, mixins.DestroyModelMixin):
     pdf_source_extensions = {".pdf", ".djvu", ".djv"}
 
     def perform_destroy(self, instance):
-        xml_file = instance.xml_file
-        pdf_file = instance.facsimile_file
-
-        instance.delete()
-
-        if xml_file:
-            xml_file.delete(save=False)
-
-        if pdf_file:
-            pdf_file.delete(save=False)
+        delete_volume_and_files(instance)
 
     @action(detail=True, methods=["post"], url_path="pdf")
     def upload_pdf(self, request, pk=None):
@@ -131,6 +122,19 @@ def get_pdf_content_type(file_name):
         return "image/vnd.djvu"
 
     return "application/octet-stream"
+
+
+def delete_volume_and_files(volume):
+    xml_file = volume.xml_file
+    pdf_file = volume.facsimile_file
+
+    volume.delete()
+
+    if xml_file:
+        xml_file.delete(save=False)
+
+    if pdf_file:
+        pdf_file.delete(save=False)
 
 
 class DjvuConversionError(Exception):
@@ -241,7 +245,7 @@ class XMLUploadView(APIView):
                 created_works.extend(parse_volume(volume))
         except Exception as exc:
             for volume in created_volumes:
-                volume.delete()
+                delete_volume_and_files(volume)
 
             return Response(
                 {"detail": str(exc) or "Не удалось разобрать XML"},
@@ -745,12 +749,7 @@ class SentimentAnalysisResultsView(APIView):
                     status=status.HTTP_404_NOT_FOUND,
                 )
 
-            results = (
-                SentimentAnalysisResult.objects
-                .select_related("work")
-                .filter(run=run)
-                .order_by("work_id")
-            )
+            results = SentimentAnalysisResult.objects.filter(run=run)
 
             summary = self.build_summary(results)
         except Exception as exc:
@@ -777,19 +776,20 @@ class SentimentAnalysisResultsView(APIView):
 
     def build_summary(self, results):
         result_rows = results.values(
-            "work_id",
-            "work__title",
-            "work__author",
-            "work__date_from",
-            "work__date_to",
-            "work__genre",
-            "work__place",
+            "original_work_id",
+            "snapshot_title",
+            "snapshot_author",
+            "snapshot_date_from",
+            "snapshot_date_to",
+            "snapshot_genre",
+            "snapshot_place",
         ).annotate(
+            live_work_id=Max("work_id"),
             segments_count=Count("id"),
             negative_count=Count("id", filter=Q(label="-1")),
             neutral_count=Count("id", filter=Q(label="0")),
             positive_count=Count("id", filter=Q(label="1")),
-        ).order_by("work_id")
+        ).order_by("original_work_id")
 
         summaries = []
 
@@ -800,15 +800,16 @@ class SentimentAnalysisResultsView(APIView):
 
             summaries.append(
                 {
-                    "work_id": result["work_id"],
-                    "title": result["work__title"],
-                    "author": result["work__author"],
+                    "work_id": result["live_work_id"],
+                    "original_work_id": result["original_work_id"],
+                    "title": result["snapshot_title"],
+                    "author": result["snapshot_author"],
                     "date": self.format_result_date(result),
-                    "date_from": result["work__date_from"],
-                    "date_to": result["work__date_to"],
+                    "date_from": result["snapshot_date_from"],
+                    "date_to": result["snapshot_date_to"],
                     "year": self.extract_date_group_label(self.format_result_date(result)),
-                    "genre": result["work__genre"],
-                    "place": result["work__place"],
+                    "genre": result["snapshot_genre"],
+                    "place": result["snapshot_place"],
                     "segments_count": result["segments_count"],
                     "negative_count": result["negative_count"],
                     "neutral_count": result["neutral_count"],
@@ -824,8 +825,8 @@ class SentimentAnalysisResultsView(APIView):
         return summaries
 
     def format_result_date(self, result):
-        date_from = result["work__date_from"]
-        date_to = result["work__date_to"]
+        date_from = result["snapshot_date_from"]
+        date_to = result["snapshot_date_to"]
 
         if date_from and date_to and date_from != date_to:
             return f"{date_from}-{date_to}"

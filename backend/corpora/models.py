@@ -119,7 +119,21 @@ class SentimentAnalysisResult(models.Model):
     LABEL_CHOICES = SentimentFragmentLabel.LABEL_CHOICES
 
     run = models.ForeignKey(SentimentAnalysisRun, on_delete=models.CASCADE, related_name="results")
-    work = models.ForeignKey(Work, on_delete=models.CASCADE, related_name="sentiment_results")
+    work = models.ForeignKey(
+        Work,
+        on_delete=models.SET_NULL,
+        related_name="sentiment_results",
+        null=True,
+        blank=True,
+    )
+    original_work_id = models.IntegerField(db_index=True)
+
+    snapshot_title = models.CharField(max_length=200, blank=True)
+    snapshot_author = models.CharField(max_length=50, blank=True)
+    snapshot_date_from = models.CharField(max_length=100, blank=True)
+    snapshot_date_to = models.CharField(max_length=100, blank=True)
+    snapshot_genre = models.CharField(max_length=20, blank=True)
+    snapshot_place = models.CharField(max_length=50, blank=True)
 
     segment_index = models.IntegerField()
     word_start = models.IntegerField()
@@ -132,5 +146,5 @@ class SentimentAnalysisResult(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
-        unique_together = ("run", "work", "segment_index")
-        ordering = ["run", "work", "segment_index"]
+        unique_together = ("run", "original_work_id", "segment_index")
+        ordering = ["run", "original_work_id", "segment_index"]
