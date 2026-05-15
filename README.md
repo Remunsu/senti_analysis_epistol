@@ -22,6 +22,7 @@ DB_USER=
 DB_PASSWORD=
 DB_HOST=localhost
 DB_PORT=5432
+SENTIMENT_MODEL_PATH=
 ```
 
 Then create separate database and user. Add them in *.env*.\
