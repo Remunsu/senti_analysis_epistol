@@ -19,7 +19,14 @@ from rest_framework import filters, mixins, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.decorators import action
-from .models import SentimentAnalysisResult, SentimentAnalysisRun, SentimentFragmentLabel, Volume, Work
+from .models import (
+    SentimentAnalysisResult,
+    SentimentAnalysisRun,
+    SentimentAnnotationSkip,
+    SentimentFragmentLabel,
+    Volume,
+    Work,
+)
 from .serializers import (
     SentimentAnalysisRunSerializer,
     VolumeSerializer,
@@ -28,6 +35,11 @@ from .serializers import (
     format_work_date,
 )
 from .services.sentiment_analyzer import MODEL_DISPLAY_NAME
+from .services.text_segments import (
+    DEFAULT_MAX_SEGMENT_SIZE,
+    DEFAULT_MIN_SEGMENT_SIZE,
+    split_text_into_word_segments,
+)
 from .services.tei_parser import parse_volume
 
 
@@ -258,8 +270,8 @@ class XMLUploadView(APIView):
 class SentimentAnnotationCriteriaMixin:
     target_genre = "письмо"
     target_languages = ("ru", "de ru", "la ru")
-    default_segment_size = 50
-    window_step = 25
+    min_segment_size = DEFAULT_MIN_SEGMENT_SIZE
+    max_segment_size = DEFAULT_MAX_SEGMENT_SIZE
 
     def get_annotation_queryset(self):
         return (
@@ -272,19 +284,21 @@ class SentimentAnnotationCriteriaMixin:
         queryset = self.get_annotation_queryset()
         total_count = queryset.count()
         labeled_count = queryset.filter(sentiment_labels__isnull=False).distinct().count()
+        skipped_count = queryset.filter(sentiment_annotation_skip__isnull=False).count()
 
         return {
             "total_count": total_count,
             "labeled_count": labeled_count,
-            "remaining_count": max(total_count - labeled_count, 0),
+            "skipped_count": skipped_count,
+            "remaining_count": max(total_count - labeled_count - skipped_count, 0),
         }
 
     def build_annotation_criteria(self):
         return {
             "genre": self.target_genre,
             "languages": list(self.target_languages),
-            "segment_size": self.default_segment_size,
-            "window_step": self.window_step,
+            "min_segment_size": self.min_segment_size,
+            "max_segment_size": self.max_segment_size,
         }
 
 
@@ -294,6 +308,7 @@ class SentimentAnnotationTaskView(SentimentAnnotationCriteriaMixin, APIView):
         work = (
             self.get_annotation_queryset()
             .filter(sentiment_labels__isnull=True)
+            .filter(sentiment_annotation_skip__isnull=True)
             .order_by("id")
             .first()
         )
@@ -302,8 +317,8 @@ class SentimentAnnotationTaskView(SentimentAnnotationCriteriaMixin, APIView):
             "criteria": self.build_annotation_criteria(),
             **self.build_annotation_stats(),
             "work": None,
-            "segment_size": self.default_segment_size,
-            "window_step": self.window_step,
+            "min_segment_size": self.min_segment_size,
+            "max_segment_size": self.max_segment_size,
             "fragments": [],
         }
 
@@ -359,6 +374,7 @@ class SentimentAnnotationTaskView(SentimentAnnotationCriteriaMixin, APIView):
             )
 
         SentimentFragmentLabel.objects.filter(work=work).delete()
+        SentimentAnnotationSkip.objects.filter(work=work).delete()
 
         labels = [
             SentimentFragmentLabel(
@@ -382,33 +398,44 @@ class SentimentAnnotationTaskView(SentimentAnnotationCriteriaMixin, APIView):
         }, status=status.HTTP_201_CREATED)
 
     def build_fragments(self, text: str):
-        words = text.split()
-        fragments = []
-
-        if not words:
-            return fragments
-
-        start = 0
-        segment_index = 0
-
-        while start < len(words):
-            end = min(start + self.default_segment_size, len(words))
-
-            fragments.append({
-                "segment_index": segment_index,
-                "word_start": start,
-                "word_end": end,
-                "text": " ".join(words[start:end]),
+        return [
+            {
+                **fragment,
                 "label": "",
-            })
+            }
+            for fragment in split_text_into_word_segments(
+                text,
+                self.min_segment_size,
+                self.max_segment_size,
+            )
+        ]
 
-            if end == len(words):
-                break
 
-            start += self.window_step
-            segment_index += 1
+class SentimentAnnotationSkipView(SentimentAnnotationCriteriaMixin, APIView):
+    def post(self, request):
+        work_id = request.data.get("work_id")
 
-        return fragments
+        if not work_id:
+            return Response(
+                {"detail": "Не указан work_id"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        work = self.get_annotation_queryset().filter(id=work_id).first()
+
+        if not work:
+            return Response(
+                {"detail": "Письмо не найдено или не входит в набор для разметки"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        SentimentFragmentLabel.objects.filter(work=work).delete()
+        SentimentAnnotationSkip.objects.get_or_create(work=work)
+
+        return Response({
+            "work_id": work.id,
+            **self.build_annotation_stats(),
+        }, status=status.HTTP_201_CREATED)
 
 
 class SentimentAnnotationExportView(SentimentAnnotationCriteriaMixin, APIView):
@@ -618,11 +645,23 @@ class WorkFilterMixin:
 
 
 class SentimentAnalysisView(WorkFilterMixin, APIView):
-    default_segment_size = 50
+    default_min_segment_size = DEFAULT_MIN_SEGMENT_SIZE
+    default_max_segment_size = DEFAULT_MAX_SEGMENT_SIZE
 
     def post(self, request):
         try:
-            segment_size = self.get_segment_size(request.data.get("segment_size"))
+            min_segment_size = self.get_segment_size(
+                request.data.get("min_segment_size") or request.data.get("segment_size"),
+                self.default_min_segment_size,
+            )
+            max_segment_size = self.get_segment_size(
+                request.data.get("max_segment_size"),
+                self.default_max_segment_size,
+            )
+
+            if max_segment_size < min_segment_size:
+                max_segment_size = max(min_segment_size, self.default_max_segment_size)
+
             work_ids = self.get_selected_work_ids(request.data)
 
             if not work_ids:
@@ -634,7 +673,9 @@ class SentimentAnalysisView(WorkFilterMixin, APIView):
             run = SentimentAnalysisRun.objects.create(
                 model_kind="rubert",
                 model_name=MODEL_DISPLAY_NAME,
-                segment_size=segment_size,
+                segment_size=min_segment_size,
+                max_segment_size=max_segment_size,
+                window_step=0,
                 works_count=len(work_ids),
                 status="running",
             )
@@ -649,7 +690,6 @@ class SentimentAnalysisView(WorkFilterMixin, APIView):
                 "corpora.tasks.run_sentiment_analysis",
                 run.id,
                 work_ids,
-                segment_size,
             )
         except Exception as exc:
             run.status = "failed"
@@ -682,14 +722,14 @@ class SentimentAnalysisView(WorkFilterMixin, APIView):
 
         return list(queryset.filter(id__in=work_ids).order_by("id").values_list("id", flat=True))
 
-    def get_segment_size(self, raw_segment_size):
+    def get_segment_size(self, raw_segment_size, default_value):
         try:
-            segment_size = int(raw_segment_size or self.default_segment_size)
+            segment_size = int(raw_segment_size or default_value)
         except (TypeError, ValueError):
-            return self.default_segment_size
+            return default_value
 
         if segment_size < 10 or segment_size > 300:
-            return self.default_segment_size
+            return default_value
 
         return segment_size
 

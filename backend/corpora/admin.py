@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Volume, Work, Token
+from .models import SentimentAnnotationSkip, Token, Volume, Work
 from .services.tei_parser import parse_volume
 
 
@@ -30,3 +30,9 @@ class WorkAdmin(admin.ModelAdmin):
 class TokenAdmin(admin.ModelAdmin):
     list_display = ("id", "text_position", "text", "lemma", "pos")
     search_fields = ("text", "lemma")
+
+
+@admin.register(SentimentAnnotationSkip)
+class SentimentAnnotationSkipAdmin(admin.ModelAdmin):
+    list_display = ("id", "work", "created_at")
+    search_fields = ("work__title", "work__source_id")

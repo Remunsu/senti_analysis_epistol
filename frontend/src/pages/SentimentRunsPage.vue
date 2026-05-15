@@ -62,6 +62,18 @@ function statusClass(status) {
   return "bg-emerald-50 text-emerald-700 ring-emerald-200"
 }
 
+function segmentationLabel(run) {
+  if (run.max_segment_size) {
+    return `Фрагменты ${run.segment_size}-${run.max_segment_size} слов`
+  }
+
+  if (run.window_step && run.window_step !== run.segment_size) {
+    return `Окна по ${run.segment_size} слов, шаг ${run.window_step}`
+  }
+
+  return `Фрагменты по ${run.segment_size} слов`
+}
+
 function clearPollTimer() {
   if (!pollTimer) return
 
@@ -168,7 +180,7 @@ onUnmounted(() => {
                   {{ run.model_name }}
                 </p>
                 <p class="mt-1 text-sm text-slate-500">
-                  Фрагменты по {{ run.segment_size }} слов
+                  {{ segmentationLabel(run) }}
                 </p>
               </div>
 

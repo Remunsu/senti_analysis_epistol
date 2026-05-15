@@ -76,6 +76,19 @@ class SentimentFragmentLabel(models.Model):
         ordering = ["work", "segment_index"]
 
 
+class SentimentAnnotationSkip(models.Model):
+    work = models.OneToOneField(
+        Work,
+        on_delete=models.CASCADE,
+        related_name="sentiment_annotation_skip",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["work"]
+
+
 class SentimentAnalysisRun(models.Model):
     MODEL_KIND_CHOICES = [
         ("rubert", "RuBERT"),
@@ -88,7 +101,9 @@ class SentimentAnalysisRun(models.Model):
 
     model_kind = models.CharField(max_length=20, choices=MODEL_KIND_CHOICES, default="rubert")
     model_name = models.CharField(max_length=200)
-    segment_size = models.IntegerField(default=50)
+    segment_size = models.IntegerField(default=60)
+    max_segment_size = models.IntegerField(null=True, blank=True)
+    window_step = models.IntegerField(default=0)
     works_count = models.IntegerField(default=0)
     results_count = models.IntegerField(default=0)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="completed")

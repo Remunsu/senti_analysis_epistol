@@ -344,7 +344,6 @@ async function analyzeSelectedWorks() {
         all_filtered: allFilteredSelected.value,
         filters_query: allFilteredSelected.value ? buildAnalysisFilterParams().toString() : "",
         work_ids: allFilteredSelected.value ? [] : [...selectedWorkIds.value],
-        segment_size: 50,
       }),
     })
     const data = await readApiResponse(response, "Не удалось выполнить анализ")

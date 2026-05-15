@@ -1,10 +1,11 @@
 from django.db import close_old_connections
 
 from .models import SentimentAnalysisResult, SentimentAnalysisRun, Work
-from .services.sentiment_analyzer import analyze_fragments, split_text_into_word_segments
+from .services.sentiment_analyzer import analyze_fragments
+from .services.text_segments import split_text_into_sliding_word_segments, split_text_into_word_segments
 
 
-def run_sentiment_analysis(run_id, work_ids, segment_size):
+def run_sentiment_analysis(run_id, work_ids, *legacy_segmentation_args):
     close_old_connections()
 
     try:
@@ -15,7 +16,7 @@ def run_sentiment_analysis(run_id, work_ids, segment_size):
         SentimentAnalysisResult.objects.filter(run=run).delete()
 
         for work in works:
-            fragments = split_text_into_word_segments(work.plain_text, segment_size)
+            fragments = split_work_text(work.plain_text, run)
             analysis_results = analyze_fragments(fragments)
 
             result_objects = [
@@ -51,3 +52,11 @@ def run_sentiment_analysis(run_id, work_ids, segment_size):
         )
     finally:
         close_old_connections()
+
+
+def split_work_text(text, run):
+    if run.max_segment_size:
+        return split_text_into_word_segments(text, run.segment_size, run.max_segment_size)
+
+    legacy_window_step = run.window_step or run.segment_size
+    return split_text_into_sliding_word_segments(text, run.segment_size, legacy_window_step)

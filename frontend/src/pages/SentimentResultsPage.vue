@@ -50,6 +50,18 @@ function scoreClass(score) {
   return "text-slate-700"
 }
 
+function segmentationLabel(runData) {
+  if (runData.max_segment_size) {
+    return `фрагменты ${runData.segment_size}-${runData.max_segment_size} слов`
+  }
+
+  if (runData.window_step && runData.window_step !== runData.segment_size) {
+    return `окна по ${runData.segment_size} слов, шаг ${runData.window_step}`
+  }
+
+  return `фрагменты по ${runData.segment_size} слов`
+}
+
 function clearPollTimer() {
   if (!pollTimer) return
 
@@ -130,7 +142,7 @@ onUnmounted(() => {
             Результаты анализа
           </h1>
           <p v-if="run" class="mt-2 text-slate-600">
-            {{ run.model_name }} · фрагменты по {{ run.segment_size }} слов · работ: {{ run.works_count }}
+            {{ run.model_name }} · {{ segmentationLabel(run) }} · работ: {{ run.works_count }}
           </p>
           <p
             v-if="run?.status === 'failed'"

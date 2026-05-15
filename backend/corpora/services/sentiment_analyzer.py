@@ -86,23 +86,6 @@ def get_classifier():
     )
 
 
-def split_text_into_word_segments(text: str, segment_size: int = 50):
-    words = text.split()
-    fragments = []
-
-    for segment_index, start in enumerate(range(0, len(words), segment_size)):
-        end = min(start + segment_size, len(words))
-
-        fragments.append({
-            "segment_index": segment_index,
-            "word_start": start,
-            "word_end": end,
-            "text": " ".join(words[start:end]),
-        })
-
-    return fragments
-
-
 def analyze_fragments(fragments):
     if not fragments:
         return []
