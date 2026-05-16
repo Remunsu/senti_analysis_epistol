@@ -548,6 +548,9 @@ class WorkFilterMixin:
         for field in self.multi_value_filter_fields:
             values = [value for value in params.getlist(field) if value != ""]
 
+            if field == "volume":
+                values = self.clean_filter_values(values, numeric=True)
+
             if values:
                 queryset = queryset.filter(**{f"{field}__in": values})
 

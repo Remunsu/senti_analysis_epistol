@@ -6,7 +6,7 @@ from django.test import override_settings
 from django.test import SimpleTestCase
 from lxml import etree
 
-from .api import SentimentSummaryMixin, build_sentiment_comparison_rows, delete_volume_and_files
+from .api import SentimentSummaryMixin, WorkFilterMixin, build_sentiment_comparison_rows, delete_volume_and_files
 from .services.sentiment_analyzer import get_model_display_name
 from .services.tei_parser import extract_work_data, format_pages
 from .services.text_segments import split_text_into_word_segments
@@ -191,6 +191,13 @@ class AnalysisSnapshotTests(SimpleTestCase):
 
         self.assertEqual(summary.extract_year_from_date_to("1751/1752"), "1751")
         self.assertEqual(summary.extract_year_from_date_to(""), "")
+
+
+class WorkFilterTests(SimpleTestCase):
+    def test_volume_filter_discards_non_numeric_values(self):
+        filters = WorkFilterMixin()
+
+        self.assertEqual(filters.clean_filter_values(["ЛМН. ПСС, 11", "11"], numeric=True), ["11"])
 
 
 class SentimentAnalyzerTests(SimpleTestCase):

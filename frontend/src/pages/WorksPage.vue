@@ -170,6 +170,12 @@ function clearFilterRows() {
   savePageState()
 }
 
+function hasVolumeFilterValue() {
+  return filterRows.value.some((row) => {
+    return getFilterField(row.field)?.key === "volume" && String(row.value || "").trim()
+  })
+}
+
 function savePageState() {
   const state = {
     search: search.value,
@@ -485,11 +491,22 @@ watch(filterRows, () => {
 onMounted(async () => {
   try {
     const restored = restorePageState()
-    await Promise.all([
-      fetchWorks(restored ? currentPage.value : 1),
-      fetchVolumes(),
-      fetchFilterOptions(),
-    ])
+    const page = restored ? currentPage.value : 1
+
+    if (restored && hasVolumeFilterValue()) {
+      await fetchVolumes()
+      await Promise.all([
+        fetchWorks(page),
+        fetchFilterOptions(),
+      ])
+    } else {
+      await Promise.all([
+        fetchWorks(page),
+        fetchVolumes(),
+        fetchFilterOptions(),
+      ])
+    }
+
     orderingWatcherReady = true
   } catch (err) {
     error.value = err.message || "Неизвестная ошибка"
