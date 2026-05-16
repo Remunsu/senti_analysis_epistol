@@ -290,13 +290,36 @@ class SentimentAnnotationCriteriaMixin:
         total_count = queryset.count()
         labeled_count = queryset.filter(sentiment_labels__isnull=False).distinct().count()
         skipped_count = queryset.filter(sentiment_annotation_skip__isnull=False).count()
+        labeled_fragments_count = SentimentFragmentLabel.objects.filter(work__in=queryset).count()
+        remaining_fragments_count = self.count_remaining_annotation_fragments(queryset)
 
         return {
             "total_count": total_count,
             "labeled_count": labeled_count,
             "skipped_count": skipped_count,
             "remaining_count": max(total_count - labeled_count - skipped_count, 0),
+            "labeled_fragments_count": labeled_fragments_count,
+            "remaining_fragments_count": remaining_fragments_count,
         }
+
+    def count_remaining_annotation_fragments(self, queryset):
+        remaining_texts = (
+            queryset
+            .filter(sentiment_labels__isnull=True)
+            .filter(sentiment_annotation_skip__isnull=True)
+            .values_list("plain_text", flat=True)
+        )
+
+        return sum(
+            len(
+                split_text_into_word_segments(
+                    text,
+                    self.min_segment_size,
+                    self.max_segment_size,
+                )
+            )
+            for text in remaining_texts.iterator(chunk_size=500)
+        )
 
     def build_annotation_criteria(self):
         return {
@@ -789,7 +812,7 @@ class SentimentSummaryMixin:
                     "date": self.format_result_date(result),
                     "date_from": result["snapshot_date_from"],
                     "date_to": result["snapshot_date_to"],
-                    "year": self.extract_date_group_label(self.format_result_date(result)),
+                    "year": self.extract_year_from_date_to(result["snapshot_date_to"]),
                     "genre": result["snapshot_genre"],
                     "place": result["snapshot_place"],
                     "segments_count": result["segments_count"],
@@ -815,18 +838,11 @@ class SentimentSummaryMixin:
 
         return date_from or date_to
 
-    def extract_date_group_label(self, date_value):
-        date_text = str(date_value or "").strip()
-
-        if not date_text:
-            return ""
-
-        if "/" in date_text:
-            return date_text
-
+    def extract_year_from_date_to(self, date_to):
+        date_text = str(date_to or "").strip()
         match = re.search(r"\d{4}", date_text)
 
-        return match.group(0) if match else date_text
+        return match.group(0) if match else ""
 
     def build_totals(self, summaries):
         totals = {

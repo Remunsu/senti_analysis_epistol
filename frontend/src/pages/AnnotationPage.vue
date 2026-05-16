@@ -16,6 +16,8 @@ const stats = ref({
   labeled_count: 0,
   skipped_count: 0,
   remaining_count: 0,
+  labeled_fragments_count: 0,
+  remaining_fragments_count: 0,
 })
 const loading = ref(false)
 const saving = ref(false)
@@ -82,6 +84,8 @@ function applyAnnotationMeta(data) {
     labeled_count: Number(data.labeled_count) || 0,
     skipped_count: Number(data.skipped_count) || 0,
     remaining_count: Number(data.remaining_count) || 0,
+    labeled_fragments_count: Number(data.labeled_fragments_count) || 0,
+    remaining_fragments_count: Number(data.remaining_fragments_count) || 0,
   }
 }
 
@@ -208,7 +212,7 @@ onMounted(() => {
       </div>
 
       <section class="mb-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-        <div class="grid gap-3 md:grid-cols-4">
+        <div class="grid gap-3 md:grid-cols-3 xl:grid-cols-6">
           <div class="rounded-xl border border-slate-200 p-4">
             <p class="text-xs font-semibold uppercase text-slate-500">
               Всего подходит
@@ -242,6 +246,24 @@ onMounted(() => {
             </p>
             <p class="mt-1 text-2xl font-semibold text-slate-900">
               {{ stats.remaining_count }}
+            </p>
+          </div>
+
+          <div class="rounded-xl border border-slate-200 p-4">
+            <p class="text-xs font-semibold uppercase text-slate-500">
+              Фрагментов размечено
+            </p>
+            <p class="mt-1 text-2xl font-semibold text-slate-900">
+              {{ stats.labeled_fragments_count }}
+            </p>
+          </div>
+
+          <div class="rounded-xl border border-slate-200 p-4">
+            <p class="text-xs font-semibold uppercase text-slate-500">
+              Фрагментов осталось
+            </p>
+            <p class="mt-1 text-2xl font-semibold text-slate-900">
+              {{ stats.remaining_fragments_count }}
             </p>
           </div>
         </div>

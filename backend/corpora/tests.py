@@ -6,7 +6,7 @@ from django.test import override_settings
 from django.test import SimpleTestCase
 from lxml import etree
 
-from .api import build_sentiment_comparison_rows, delete_volume_and_files
+from .api import SentimentSummaryMixin, build_sentiment_comparison_rows, delete_volume_and_files
 from .services.sentiment_analyzer import get_model_display_name
 from .services.tei_parser import extract_work_data, format_pages
 from .services.text_segments import split_text_into_word_segments
@@ -185,6 +185,12 @@ class AnalysisSnapshotTests(SimpleTestCase):
         self.assertEqual(rows[0]["candidate"]["segments_count"], 2)
         self.assertEqual(rows[0]["mean_score_delta"], 0.25)
         self.assertEqual(rows[0]["segments_delta"], -2)
+
+    def test_extract_year_uses_date_to_only(self):
+        summary = SentimentSummaryMixin()
+
+        self.assertEqual(summary.extract_year_from_date_to("1751/1752"), "1751")
+        self.assertEqual(summary.extract_year_from_date_to(""), "")
 
 
 class SentimentAnalyzerTests(SimpleTestCase):
