@@ -951,6 +951,37 @@ class SentimentAnalysisResultsView(SentimentSummaryMixin, APIView):
         return SentimentAnalysisRun.objects.order_by("-created_at").first()
 
 
+class SentimentAnalysisWorkFragmentsView(APIView):
+    def get(self, request, run_id, original_work_id):
+        run = SentimentAnalysisRun.objects.filter(id=run_id).first()
+
+        if not run:
+            return Response(
+                {"detail": "Результаты анализа не найдены"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        fragments = list(
+            SentimentAnalysisResult.objects
+            .filter(run=run, original_work_id=original_work_id)
+            .order_by("segment_index")
+            .values(
+                "segment_index",
+                "word_start",
+                "word_end",
+                "text",
+                "label",
+                "confidence",
+            )
+        )
+
+        return Response({
+            "run": SentimentAnalysisRunSerializer(run).data,
+            "original_work_id": original_work_id,
+            "fragments": fragments,
+        })
+
+
 class SentimentComparisonView(SentimentRunMixin, SentimentSummaryMixin, APIView):
     legacy_segment_size = 50
 
