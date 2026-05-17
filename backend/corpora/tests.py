@@ -7,7 +7,7 @@ from django.test import SimpleTestCase
 from lxml import etree
 
 from .api import SentimentSummaryMixin, WorkFilterMixin, build_sentiment_comparison_rows, delete_volume_and_files
-from .services.sentiment_analyzer import get_model_display_name
+from .services.sentiment_analyzer import get_model_display_name, map_prediction_label
 from .services.tei_parser import extract_work_data, format_pages
 from .services.text_segments import split_text_into_word_segments
 from .tasks import build_work_snapshot, split_work_text
@@ -211,6 +211,11 @@ class SentimentAnalyzerTests(SimpleTestCase):
         with patch.dict("os.environ", {}, clear=True):
             with self.assertRaisesRegex(FileNotFoundError, "SENTIMENT_MODEL_PATH"):
                 get_model_display_name()
+
+    def test_label_mapping_supports_lowercase_labels(self):
+        self.assertEqual(map_prediction_label("negative"), "-1")
+        self.assertEqual(map_prediction_label("neutral"), "0")
+        self.assertEqual(map_prediction_label("positive"), "1")
 
 
 class VolumeFileCleanupTests(SimpleTestCase):

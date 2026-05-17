@@ -100,12 +100,14 @@ def analyze_fragments(fragments):
     results = []
 
     for fragment, prediction in zip(fragments, predictions):
-        label = prediction["label"]
-
         results.append({
             **fragment,
-            "label": LABEL_TO_POLARITY.get(label, "0"),
+            "label": map_prediction_label(prediction["label"]),
             "confidence": float(prediction["score"]),
         })
 
     return results
+
+
+def map_prediction_label(label):
+    return LABEL_TO_POLARITY.get(str(label).upper(), "0")
