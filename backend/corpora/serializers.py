@@ -145,6 +145,23 @@ class SentimentFragmentLabelSerializer(serializers.ModelSerializer):
 
 
 class SentimentAnalysisRunSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source="user.username", read_only=True)
+
     class Meta:
         model = SentimentAnalysisRun
-        fields = "__all__"
+        fields = [
+            "id",
+            "user",
+            "username",
+            "model_kind",
+            "model_name",
+            "segment_size",
+            "max_segment_size",
+            "window_step",
+            "works_count",
+            "results_count",
+            "status",
+            "error_message",
+            "created_at",
+        ]
+        read_only_fields = fields

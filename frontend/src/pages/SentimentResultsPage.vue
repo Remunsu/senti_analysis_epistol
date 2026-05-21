@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref, watch } from "vue"
 import { RouterLink, useRoute } from "vue-router"
 import { API_BASE_URL, readApiResponse } from "../api"
+import { authFetch, fetchAuthStatus, isAuthenticated } from "../auth"
 
 const route = useRoute()
 
@@ -120,7 +121,7 @@ async function fetchWorkFragments(originalWorkId) {
   }
 
   try {
-    const response = await fetch(
+    const response = await authFetch(
       `${API_BASE_URL}/sentiment/results/${runId.value}/works/${originalWorkId}/`
     )
     const data = await readApiResponse(response, "Не удалось загрузить фрагменты")
@@ -175,7 +176,7 @@ async function fetchResults({ silent = false } = {}) {
     : `${API_BASE_URL}/sentiment/results/`
 
   try {
-    const response = await fetch(url)
+    const response = await authFetch(url)
     const data = await readApiResponse(response, "Не удалось загрузить результаты анализа")
 
     if (!response.ok) {
@@ -212,8 +213,12 @@ watch(runId, () => {
   fetchResults()
 })
 
-onMounted(() => {
-  fetchResults()
+onMounted(async () => {
+  await fetchAuthStatus()
+
+  if (isAuthenticated.value) {
+    fetchResults()
+  }
 })
 
 onUnmounted(() => {
@@ -239,20 +244,23 @@ onUnmounted(() => {
             Анализ завершился ошибкой: {{ run.error_message || "подробности не указаны" }}
           </p>
         </div>
-
-        <RouterLink
-          :to="{ name: 'sentiment-results' }"
-          class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
-        >
-          К списку анализов
-        </RouterLink>
       </div>
 
       <div v-if="error" class="mb-4 rounded-xl bg-red-50 p-4 text-red-700">
         {{ error }}
       </div>
 
-      <div v-if="loading" class="rounded-2xl bg-white p-5 text-slate-500 shadow-sm ring-1 ring-slate-200">
+      <div
+        v-if="!isAuthenticated"
+        class="rounded-2xl bg-white p-5 text-slate-600 shadow-sm ring-1 ring-slate-200"
+      >
+        Результаты анализа доступны только вошедшим пользователям.
+        <RouterLink to="/login" class="font-medium text-slate-900 underline">
+          Войти
+        </RouterLink>
+      </div>
+
+      <div v-else-if="loading" class="rounded-2xl bg-white p-5 text-slate-500 shadow-sm ring-1 ring-slate-200">
         Загружаю результаты...
       </div>
 

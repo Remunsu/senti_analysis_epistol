@@ -1,7 +1,8 @@
 <script setup>
-import { computed, ref } from "vue"
+import { computed, onMounted, ref } from "vue"
 import { RouterLink } from "vue-router"
 import { API_BASE_URL, readApiResponse } from "../api"
+import { authFetch, fetchAuthStatus, isAuthenticated } from "../auth"
 
 const selectedFiles = ref([])
 const submitting = ref(false)
@@ -53,7 +54,7 @@ async function uploadXml() {
   })
 
   try {
-    const response = await fetch(`${API_BASE_URL}/upload/`, {
+    const response = await authFetch(`${API_BASE_URL}/upload/`, {
       method: "POST",
       body: formData,
     })
@@ -71,6 +72,10 @@ async function uploadXml() {
     submitting.value = false
   }
 }
+
+onMounted(() => {
+  fetchAuthStatus().catch(() => {})
+})
 </script>
 
 <template>
@@ -83,44 +88,53 @@ async function uploadXml() {
       </div>
 
       <section class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-        <div class="mb-5">
-          <label class="mb-2 block text-sm font-semibold text-slate-900">
-            XML-файлы томов
-          </label>
-          <input
-            type="file"
-            multiple
-            accept=".xml,text/xml,application/xml"
-            class="block w-full rounded-xl border border-slate-300 px-4 py-2 text-slate-900 file:mr-4 file:rounded-lg file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:font-medium file:text-white hover:file:bg-slate-700"
-            @change="handleFileChange"
-          />
-          <div v-if="selectedFiles.length" class="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <p class="text-sm font-medium text-slate-900">
-              Выбрано файлов: {{ selectedFilesCount }}
-            </p>
+        <div v-if="!isAuthenticated" class="rounded-xl bg-amber-50 p-4 text-amber-800">
+          Загружать XML могут только вошедшие пользователи.
+          <RouterLink to="/login" class="font-medium underline">
+            Войти
+          </RouterLink>
+        </div>
 
-            <ul class="mt-2 space-y-1 text-sm text-slate-600">
-              <li
-                v-for="file in selectedFiles"
-                :key="`${file.name}-${file.size}`"
-              >
-                {{ file.name }}
-              </li>
-            </ul>
+        <template v-else>
+          <div class="mb-5">
+            <label class="mb-2 block text-sm font-semibold text-slate-900">
+              XML-файлы томов
+            </label>
+            <input
+              type="file"
+              multiple
+              accept=".xml,text/xml,application/xml"
+              class="block w-full rounded-xl border border-slate-300 px-4 py-2 text-slate-900 file:mr-4 file:rounded-lg file:border-0 file:bg-slate-900 file:px-4 file:py-2 file:font-medium file:text-white hover:file:bg-slate-700"
+              @change="handleFileChange"
+            />
+            <div v-if="selectedFiles.length" class="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+              <p class="text-sm font-medium text-slate-900">
+                Выбрано файлов: {{ selectedFilesCount }}
+              </p>
+
+              <ul class="mt-2 space-y-1 text-sm text-slate-600">
+                <li
+                  v-for="file in selectedFiles"
+                  :key="`${file.name}-${file.size}`"
+                >
+                  {{ file.name }}
+                </li>
+              </ul>
+            </div>
           </div>
-        </div>
 
-        <div v-if="error" class="mb-4 rounded-xl bg-red-50 p-4 text-red-700">
-          {{ error }}
-        </div>
+          <div v-if="error" class="mb-4 rounded-xl bg-red-50 p-4 text-red-700">
+            {{ error }}
+          </div>
 
-        <button
-          @click="uploadXml"
-          :disabled="submitting || !selectedFiles.length"
-          class="rounded-xl bg-slate-900 px-5 py-2 font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {{ submitting ? "Загрузка..." : "Загрузить" }}
-        </button>
+          <button
+            @click="uploadXml"
+            :disabled="submitting || !selectedFiles.length"
+            class="rounded-xl bg-slate-900 px-5 py-2 font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {{ submitting ? "Загрузка..." : "Загрузить" }}
+          </button>
+        </template>
       </section>
 
       <section

@@ -1,7 +1,8 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue"
 import { RouterLink, useRoute, useRouter } from "vue-router"
-import { API_BASE_URL } from "../api"
+import { API_BASE_URL, readApiResponse } from "../api"
+import { authFetch, fetchAuthStatus, isAuthenticated } from "../auth"
 import PaginationControls from "../components/PaginationControls.vue"
 
 const route = useRoute()
@@ -141,14 +142,14 @@ async function saveVolume() {
   success.value = ""
 
   try {
-    const response = await fetch(`${API_BASE_URL}/volumes/${volumeId.value}/`, {
+    const response = await authFetch(`${API_BASE_URL}/volumes/${volumeId.value}/`, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(buildVolumePayload()),
     })
-    const data = await response.json()
+    const data = await readApiResponse(response, "Не удалось сохранить том")
 
     if (!response.ok) {
       throw new Error(data.detail || "Не удалось сохранить том")
@@ -173,12 +174,12 @@ async function deleteVolume() {
   error.value = ""
 
   try {
-    const response = await fetch(`${API_BASE_URL}/volumes/${volumeId.value}/`, {
+    const response = await authFetch(`${API_BASE_URL}/volumes/${volumeId.value}/`, {
       method: "DELETE",
     })
 
     if (!response.ok) {
-      const data = await response.json().catch(() => ({}))
+      const data = await readApiResponse(response, "Не удалось удалить том")
       throw new Error(data.detail || "Не удалось удалить том")
     }
 
@@ -253,11 +254,11 @@ async function uploadPdf(event) {
   formData.append("file", file)
 
   try {
-    const response = await fetch(`${API_BASE_URL}/volumes/${volumeId.value}/pdf/`, {
+    const response = await authFetch(`${API_BASE_URL}/volumes/${volumeId.value}/pdf/`, {
       method: "POST",
       body: formData,
     })
-    const data = await response.json()
+    const data = await readApiResponse(response, "Не удалось загрузить файл тома")
 
     if (!response.ok) {
       throw new Error(data.detail || "Не удалось загрузить файл тома")
@@ -309,6 +310,7 @@ watch(volumeId, () => {
 })
 
 onMounted(() => {
+  fetchAuthStatus().catch(() => {})
   fetchPageData()
 })
 </script>
@@ -323,7 +325,7 @@ onMounted(() => {
 
         <div v-if="volume" class="flex flex-wrap gap-3">
           <button
-            v-if="!isEditing"
+            v-if="!isEditing && isAuthenticated"
             type="button"
             @click="startEditing"
             class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
@@ -352,6 +354,7 @@ onMounted(() => {
           </template>
 
           <button
+            v-if="isAuthenticated"
             type="button"
             @click="deleteVolume"
             :disabled="deleting || saving"
@@ -393,6 +396,7 @@ onMounted(() => {
               </a>
 
               <button
+                v-if="isAuthenticated"
                 type="button"
                 @click="openPdfPicker"
                 :disabled="pdfUploading"
@@ -402,6 +406,7 @@ onMounted(() => {
               </button>
 
               <input
+                v-if="isAuthenticated"
                 ref="pdfInput"
                 type="file"
                 accept=".pdf,.djvu,.djv,application/pdf,image/vnd.djvu"

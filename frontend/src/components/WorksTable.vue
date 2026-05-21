@@ -19,6 +19,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  selectable: {
+    type: Boolean,
+    default: true,
+  },
 })
 
 const emit = defineEmits(["toggle-work", "toggle-all-filtered"])
@@ -51,7 +55,7 @@ function formatWorkDate(work) {
   <div class="overflow-x-auto">
     <table class="min-w-[980px] table-fixed border-collapse text-left">
       <colgroup>
-        <col class="w-12" />
+        <col v-if="selectable" class="w-12" />
         <col />
         <col class="w-40" />
         <col class="w-44" />
@@ -61,7 +65,7 @@ function formatWorkDate(work) {
 
       <thead class="bg-slate-100 text-sm text-slate-700">
         <tr>
-          <th class="px-5 py-3">
+          <th v-if="selectable" class="px-5 py-3">
             <input
               type="checkbox"
               :checked="allFilteredSelected"
@@ -86,7 +90,7 @@ function formatWorkDate(work) {
           :key="work.id"
           class="hover:bg-slate-50"
         >
-          <td class="px-5 py-3 align-top">
+          <td v-if="selectable" class="px-5 py-3 align-top">
             <input
               type="checkbox"
               :checked="isWorkSelected(work.id)"
@@ -126,7 +130,7 @@ function formatWorkDate(work) {
         </tr>
 
         <tr v-if="!loading && works.length === 0">
-          <td colspan="6" class="px-5 py-8 text-center text-slate-500">
+          <td :colspan="selectable ? 6 : 5" class="px-5 py-8 text-center text-slate-500">
             Произведения не найдены
           </td>
         </tr>

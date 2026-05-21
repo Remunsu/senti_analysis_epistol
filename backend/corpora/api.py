@@ -5,6 +5,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from django.contrib.auth import authenticate, login, logout
+from django.middleware.csrf import get_token
 from django.core.files import File
 from django.db.models import Count, Max, Q
 from django.db import transaction
@@ -14,6 +16,7 @@ from django.utils.decorators import method_decorator
 from django.views.decorators.clickjacking import xframe_options_exempt
 from django_q.tasks import async_task
 from rest_framework import status
+from rest_framework.permissions import AllowAny, BasePermission, IsAuthenticated, SAFE_METHODS
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework import filters, mixins, viewsets
 from rest_framework.response import Response
@@ -44,13 +47,87 @@ from .services.text_segments import (
 from .services.tei_parser import parse_volume
 
 
+def build_auth_payload(request):
+    user = request.user
+
+    return {
+        "authenticated": user.is_authenticated,
+        "user": (
+            {
+                "id": user.id,
+                "username": user.get_username(),
+                "is_staff": user.is_staff,
+                "is_superuser": user.is_superuser,
+            }
+            if user.is_authenticated else None
+        ),
+        "csrf_token": get_token(request),
+    }
+
+
+class AuthStatusView(APIView):
+    permission_classes = [AllowAny]
+
+    def get(self, request):
+        return Response(build_auth_payload(request))
+
+
+class AuthLoginView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        username = str(request.data.get("username") or "").strip()
+        password = request.data.get("password") or ""
+
+        if not username or not password:
+            return Response(
+                {"detail": "Введите логин и пароль"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = authenticate(request, username=username, password=password)
+
+        if user is None:
+            return Response(
+                {"detail": "Неверный логин или пароль"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not user.is_active:
+            return Response(
+                {"detail": "Пользователь отключен"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        login(request, user)
+
+        return Response(build_auth_payload(request))
+
+
+class AuthLogoutView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        logout(request)
+
+        return Response(build_auth_payload(request))
+
+
+class AuthenticatedForUnsafeMethods(BasePermission):
+    def has_permission(self, request, view):
+        if request.method in SAFE_METHODS:
+            return True
+
+        return request.user and request.user.is_authenticated
+
+
 class EditableModelViewSet(
     mixins.ListModelMixin,
     mixins.RetrieveModelMixin,
     mixins.UpdateModelMixin,
     viewsets.GenericViewSet,
 ):
-    pass
+    permission_classes = [AuthenticatedForUnsafeMethods]
 
 
 class VolumeViewSet(EditableModelViewSet, mixins.DestroyModelMixin):
@@ -200,6 +277,7 @@ def save_converted_djvu(volume, source_file):
 
 
 class XMLUploadView(APIView):
+    permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
     allowed_content_types = {"text/xml", "application/xml", "application/octet-stream", ""}
     max_file_size = 100 * 1024 * 1024
@@ -331,6 +409,7 @@ class SentimentAnnotationCriteriaMixin:
 
 
 class SentimentAnnotationTaskView(SentimentAnnotationCriteriaMixin, APIView):
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         work = (
@@ -440,6 +519,8 @@ class SentimentAnnotationTaskView(SentimentAnnotationCriteriaMixin, APIView):
 
 
 class SentimentAnnotationSkipView(SentimentAnnotationCriteriaMixin, APIView):
+    permission_classes = [IsAuthenticated]
+
     def post(self, request):
         work_id = request.data.get("work_id")
 
@@ -467,6 +548,8 @@ class SentimentAnnotationSkipView(SentimentAnnotationCriteriaMixin, APIView):
 
 
 class SentimentAnnotationExportView(SentimentAnnotationCriteriaMixin, APIView):
+    permission_classes = [IsAuthenticated]
+
     def get(self, request):
         response = HttpResponse(content_type="text/csv; charset=utf-8")
         response["Content-Disposition"] = 'attachment; filename="sentiment_annotations.csv"'
@@ -682,6 +765,7 @@ class WorkFilterMixin:
 class SentimentRunMixin(WorkFilterMixin):
     default_min_segment_size = DEFAULT_MIN_SEGMENT_SIZE
     default_max_segment_size = DEFAULT_MAX_SEGMENT_SIZE
+    max_runs_per_user = 5
 
     def get_selected_work_ids(self, data):
         queryset = Work.objects.exclude(plain_text="")
@@ -706,8 +790,15 @@ class SentimentRunMixin(WorkFilterMixin):
 
         return segment_size
 
-    def create_run(self, work_ids, segment_size, max_segment_size=None, window_step=0):
+    def user_can_create_run(self, user):
+        if user.is_staff or user.is_superuser:
+            return True
+
+        return SentimentAnalysisRun.objects.filter(user=user).count() < self.max_runs_per_user
+
+    def create_run(self, user, work_ids, segment_size, max_segment_size=None, window_step=0):
         return SentimentAnalysisRun.objects.create(
+            user=user,
             model_kind="rubert",
             model_name=get_model_display_name(),
             segment_size=segment_size,
@@ -732,8 +823,16 @@ class SentimentRunMixin(WorkFilterMixin):
 
 
 class SentimentAnalysisView(SentimentRunMixin, APIView):
+    permission_classes = [IsAuthenticated]
+
     def post(self, request):
         try:
+            if not self.user_can_create_run(request.user):
+                return Response(
+                    {"detail": f"Лимит анализов на пользователя: {self.max_runs_per_user}. Удалите старый анализ, чтобы запустить новый."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
             min_segment_size = self.get_segment_size(
                 request.data.get("min_segment_size") or request.data.get("segment_size"),
                 self.default_min_segment_size,
@@ -755,6 +854,7 @@ class SentimentAnalysisView(SentimentRunMixin, APIView):
                 )
 
             run = self.create_run(
+                request.user,
                 work_ids,
                 segment_size=min_segment_size,
                 max_segment_size=max_segment_size,
@@ -919,10 +1019,22 @@ class SentimentSummaryMixin:
         return sorted(grouped_items, key=lambda item: (-item["segments_count"], item["label"]))
 
 
-class SentimentAnalysisResultsView(SentimentSummaryMixin, APIView):
+class SentimentAccessMixin:
+    permission_classes = [IsAuthenticated]
+
+    def get_run_queryset(self, request):
+        queryset = SentimentAnalysisRun.objects.all()
+
+        if request.user.is_staff or request.user.is_superuser:
+            return queryset
+
+        return queryset.filter(user=request.user)
+
+
+class SentimentAnalysisResultsView(SentimentAccessMixin, SentimentSummaryMixin, APIView):
     def get(self, request, run_id=None):
         try:
-            run = self.get_run(run_id)
+            run = self.get_run(request, run_id)
 
             if not run:
                 return Response(
@@ -949,16 +1061,18 @@ class SentimentAnalysisResultsView(SentimentSummaryMixin, APIView):
             },
         })
 
-    def get_run(self, run_id):
+    def get_run(self, request, run_id):
+        queryset = self.get_run_queryset(request)
+
         if run_id:
-            return SentimentAnalysisRun.objects.filter(id=run_id).first()
+            return queryset.filter(id=run_id).first()
 
-        return SentimentAnalysisRun.objects.order_by("-created_at").first()
+        return queryset.order_by("-created_at").first()
 
 
-class SentimentAnalysisWorkFragmentsView(APIView):
+class SentimentAnalysisWorkFragmentsView(SentimentAccessMixin, APIView):
     def get(self, request, run_id, original_work_id):
-        run = SentimentAnalysisRun.objects.filter(id=run_id).first()
+        run = self.get_run_queryset(request).filter(id=run_id).first()
 
         if not run:
             return Response(
@@ -987,13 +1101,28 @@ class SentimentAnalysisWorkFragmentsView(APIView):
         })
 
 
-class SentimentAnalysisRunsView(APIView):
+class SentimentAnalysisRunsView(SentimentAccessMixin, APIView):
     def get(self, request):
-        runs = SentimentAnalysisRun.objects.order_by("-created_at")
+        runs = self.get_run_queryset(request).order_by("-created_at")
 
         return Response({
             "results": SentimentAnalysisRunSerializer(runs, many=True).data,
         })
+
+
+class SentimentAnalysisRunDetailView(SentimentAccessMixin, APIView):
+    def delete(self, request, run_id):
+        run = self.get_run_queryset(request).filter(id=run_id).first()
+
+        if not run:
+            return Response(
+                {"detail": "Анализ не найден"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        run.delete()
+
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
 
 class WorkViewSet(WorkFilterMixin, EditableModelViewSet):

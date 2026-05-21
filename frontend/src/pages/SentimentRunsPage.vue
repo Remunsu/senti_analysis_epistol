@@ -2,9 +2,11 @@
 import { computed, onMounted, onUnmounted, ref } from "vue"
 import { RouterLink } from "vue-router"
 import { API_BASE_URL, readApiResponse } from "../api"
+import { authFetch, fetchAuthStatus, isAuthenticated } from "../auth"
 
 const runs = ref([])
 const loading = ref(false)
+const deletingId = ref(null)
 const error = ref("")
 let pollTimer = null
 
@@ -99,7 +101,7 @@ async function fetchRuns({ silent = false } = {}) {
   error.value = ""
 
   try {
-    const response = await fetch(`${API_BASE_URL}/sentiment/runs/`)
+    const response = await authFetch(`${API_BASE_URL}/sentiment/runs/`)
     const data = await readApiResponse(response, "Не удалось загрузить запуски анализа")
 
     if (!response.ok) {
@@ -116,8 +118,37 @@ async function fetchRuns({ silent = false } = {}) {
   }
 }
 
-onMounted(() => {
-  fetchRuns()
+async function deleteRun(run) {
+  if (deletingId.value) return
+  if (!window.confirm("Удалить этот анализ и все его результаты?")) return
+
+  deletingId.value = run.id
+  error.value = ""
+
+  try {
+    const response = await authFetch(`${API_BASE_URL}/sentiment/runs/${run.id}/`, {
+      method: "DELETE",
+    })
+
+    if (!response.ok) {
+      const data = await readApiResponse(response, "Не удалось удалить анализ")
+      throw new Error(data.detail || "Не удалось удалить анализ")
+    }
+
+    runs.value = runs.value.filter((item) => item.id !== run.id)
+  } catch (err) {
+    error.value = err.message || "Неизвестная ошибка"
+  } finally {
+    deletingId.value = null
+  }
+}
+
+onMounted(async () => {
+  await fetchAuthStatus()
+
+  if (isAuthenticated.value) {
+    fetchRuns()
+  }
 })
 
 onUnmounted(() => {
@@ -140,7 +171,17 @@ onUnmounted(() => {
         {{ error }}
       </div>
 
-      <div v-if="loading" class="rounded-2xl bg-white p-5 text-slate-500 shadow-sm ring-1 ring-slate-200">
+      <div
+        v-if="!isAuthenticated"
+        class="rounded-2xl bg-white p-5 text-slate-600 shadow-sm ring-1 ring-slate-200"
+      >
+        Результаты анализа доступны только вошедшим пользователям.
+        <RouterLink to="/login" class="font-medium text-slate-900 underline">
+          Войти
+        </RouterLink>
+      </div>
+
+      <div v-else-if="loading" class="rounded-2xl bg-white p-5 text-slate-500 shadow-sm ring-1 ring-slate-200">
         Загружаю запуски анализа...
       </div>
 
@@ -164,11 +205,10 @@ onUnmounted(() => {
           </div>
 
           <div class="divide-y divide-slate-200">
-            <RouterLink
+            <div
               v-for="run in group.runs"
               :key="run.id"
-              :to="{ name: 'sentiment-result-detail', params: { runId: run.id } }"
-              class="grid gap-3 px-5 py-4 hover:bg-slate-50 md:grid-cols-[160px_minmax(0,1fr)_160px_160px_auto] md:items-center"
+              class="grid gap-3 px-5 py-4 hover:bg-slate-50 md:grid-cols-[160px_minmax(0,1fr)_160px_160px_180px] md:items-center"
             >
               <div>
                 <p class="text-sm text-slate-500">Время</p>
@@ -194,15 +234,29 @@ onUnmounted(() => {
                 <p class="font-medium text-slate-900">{{ run.results_count }}</p>
               </div>
 
-              <div class="flex md:justify-end">
+              <div class="flex flex-wrap gap-2 md:justify-end">
                 <span
                   class="rounded-full px-3 py-1 text-sm font-medium ring-1"
                   :class="statusClass(run.status)"
                 >
                   {{ statusLabels[run.status] || run.status }}
                 </span>
+                <RouterLink
+                  :to="{ name: 'sentiment-result-detail', params: { runId: run.id } }"
+                  class="rounded-xl border border-slate-300 px-3 py-1 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                >
+                  Открыть
+                </RouterLink>
+                <button
+                  type="button"
+                  @click="deleteRun(run)"
+                  :disabled="deletingId === run.id"
+                  class="rounded-xl border border-red-200 px-3 py-1 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  {{ deletingId === run.id ? "Удаляю..." : "Удалить" }}
+                </button>
               </div>
-            </RouterLink>
+            </div>
           </div>
         </section>
       </div>

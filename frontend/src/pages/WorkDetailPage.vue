@@ -1,7 +1,8 @@
 <script setup>
 import { computed, onMounted, ref, watch } from "vue"
 import { RouterLink, useRoute } from "vue-router"
-import { API_BASE_URL } from "../api"
+import { API_BASE_URL, readApiResponse } from "../api"
+import { authFetch, fetchAuthStatus, isAuthenticated } from "../auth"
 
 const route = useRoute()
 
@@ -231,14 +232,14 @@ async function saveWork() {
   success.value = ""
 
   try {
-    const response = await fetch(`${API_BASE_URL}/works/${workId.value}/`, {
+    const response = await authFetch(`${API_BASE_URL}/works/${workId.value}/`, {
       method: "PATCH",
       headers: {
         "Content-Type": "application/json",
       },
       body: JSON.stringify(buildWorkPayload()),
     })
-    const data = await response.json()
+    const data = await readApiResponse(response, "Не удалось сохранить произведение")
 
     if (!response.ok) {
       throw new Error(data.detail || "Не удалось сохранить произведение")
@@ -288,6 +289,7 @@ watch(canPreviewPdf, (canPreview) => {
 })
 
 onMounted(() => {
+  fetchAuthStatus().catch(() => {})
   fetchWork()
 })
 </script>
@@ -304,7 +306,7 @@ onMounted(() => {
 
         <div v-if="work" class="flex flex-wrap gap-3">
           <button
-            v-if="!isEditing"
+            v-if="!isEditing && isAuthenticated"
             type="button"
             @click="startEditing"
             class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"

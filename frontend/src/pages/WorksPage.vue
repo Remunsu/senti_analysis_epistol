@@ -2,6 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue"
 import { useRouter } from "vue-router"
 import { API_BASE_URL, readApiResponse } from "../api"
+import { authFetch, fetchAuthStatus, isAuthenticated } from "../auth"
 import AutocompleteInput from "../components/AutocompleteInput.vue"
 import PaginationControls from "../components/PaginationControls.vue"
 import WorksTable from "../components/WorksTable.vue"
@@ -338,13 +339,13 @@ function buildAnalysisFilterParams() {
 }
 
 async function analyzeSelectedWorks() {
-  if (!selectedWorksCount.value || analyzing.value) return
+  if (!isAuthenticated.value || !selectedWorksCount.value || analyzing.value) return
 
   analyzing.value = true
   error.value = ""
 
   try {
-    const response = await fetch(`${API_BASE_URL}/sentiment/analyze/`, {
+    const response = await authFetch(`${API_BASE_URL}/sentiment/analyze/`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -458,7 +459,13 @@ watch(filterRows, () => {
 
 onMounted(async () => {
   try {
+    await fetchAuthStatus()
+
     const restored = restorePageState()
+
+    if (!isAuthenticated.value) {
+      clearSelection()
+    }
     const page = restored ? currentPage.value : 1
 
     if (restored && hasVolumeFilterValue()) {
@@ -641,7 +648,7 @@ onMounted(async () => {
             <p class="text-sm text-slate-600">
               Найдено: {{ totalCount }}
             </p>
-            <p v-if="selectedWorksCount" class="mt-1 text-sm font-medium text-slate-900">
+            <p v-if="isAuthenticated && selectedWorksCount" class="mt-1 text-sm font-medium text-slate-900">
               Выбрано: {{ selectedWorksCount }}
             </p>
           </div>
@@ -650,7 +657,7 @@ onMounted(async () => {
             Обновление...
           </p>
           
-          <div class="flex flex-wrap gap-3">
+          <div v-if="isAuthenticated" class="flex flex-wrap gap-3">
             <button
               @click="analyzeSelectedWorks"
               :disabled="selectedWorksCount === 0 || analyzing"
@@ -666,6 +673,7 @@ onMounted(async () => {
           :loading="loading"
           :selected-ids="selectedWorkIds"
           :all-filtered-selected="allFilteredSelected"
+          :selectable="isAuthenticated"
           @toggle-work="toggleWorkSelection"
           @toggle-all-filtered="toggleAllFilteredWorks"
         />

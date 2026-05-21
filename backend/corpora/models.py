@@ -1,3 +1,4 @@
+from django.conf import settings
 from django.db import models
 
 class Volume(models.Model):
@@ -91,6 +92,13 @@ class SentimentAnalysisRun(models.Model):
         ("failed", "Ошибка"),
     ]
 
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name="sentiment_analysis_runs",
+        null=True,
+        blank=True,
+    )
     model_kind = models.CharField(max_length=20, choices=MODEL_KIND_CHOICES, default="rubert")
     model_name = models.CharField(max_length=200)
     segment_size = models.IntegerField(default=60)
