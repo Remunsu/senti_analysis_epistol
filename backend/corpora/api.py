@@ -35,7 +35,7 @@ from .serializers import (
     format_work_date,
     format_work_date_values,
 )
-from .services.sentiment_analyzer import MODEL_DISPLAY_NAME
+from .services.sentiment_analyzer import get_model_display_name
 from .services.text_segments import (
     DEFAULT_MAX_SEGMENT_SIZE,
     DEFAULT_MIN_SEGMENT_SIZE,
@@ -290,13 +290,36 @@ class SentimentAnnotationCriteriaMixin:
         total_count = queryset.count()
         labeled_count = queryset.filter(sentiment_labels__isnull=False).distinct().count()
         skipped_count = queryset.filter(sentiment_annotation_skip__isnull=False).count()
+        labeled_fragments_count = SentimentFragmentLabel.objects.filter(work__in=queryset).count()
+        remaining_fragments_count = self.count_remaining_annotation_fragments(queryset)
 
         return {
             "total_count": total_count,
             "labeled_count": labeled_count,
             "skipped_count": skipped_count,
             "remaining_count": max(total_count - labeled_count - skipped_count, 0),
+            "labeled_fragments_count": labeled_fragments_count,
+            "remaining_fragments_count": remaining_fragments_count,
         }
+
+    def count_remaining_annotation_fragments(self, queryset):
+        remaining_texts = (
+            queryset
+            .filter(sentiment_labels__isnull=True)
+            .filter(sentiment_annotation_skip__isnull=True)
+            .values_list("plain_text", flat=True)
+        )
+
+        return sum(
+            len(
+                split_text_into_word_segments(
+                    text,
+                    self.min_segment_size,
+                    self.max_segment_size,
+                )
+            )
+            for text in remaining_texts.iterator(chunk_size=500)
+        )
 
     def build_annotation_criteria(self):
         return {
@@ -447,6 +470,7 @@ class SentimentAnnotationExportView(SentimentAnnotationCriteriaMixin, APIView):
     def get(self, request):
         response = HttpResponse(content_type="text/csv; charset=utf-8")
         response["Content-Disposition"] = 'attachment; filename="sentiment_annotations.csv"'
+        response.write("\ufeff")
 
         writer = csv.writer(response)
         writer.writerow([
@@ -458,6 +482,7 @@ class SentimentAnnotationExportView(SentimentAnnotationCriteriaMixin, APIView):
             "work_number",
             "title",
             "author",
+            "recipient",
             "genre",
             "language",
             "date_from",
@@ -493,6 +518,7 @@ class SentimentAnnotationExportView(SentimentAnnotationCriteriaMixin, APIView):
                 work.number,
                 work.title,
                 work.author,
+                work.recipient,
                 work.genre,
                 work.language,
                 work.date_from,
@@ -515,6 +541,7 @@ class WorkFilterMixin:
     multi_value_filter_fields = [
         "volume",
         "author",
+        "recipient",
         "genre",
         "language",
         "place",
@@ -523,6 +550,9 @@ class WorkFilterMixin:
     def apply_work_filters(self, queryset, params):
         for field in self.multi_value_filter_fields:
             values = [value for value in params.getlist(field) if value != ""]
+
+            if field == "volume":
+                values = self.clean_filter_values(values, numeric=True)
 
             if values:
                 queryset = queryset.filter(**{f"{field}__in": values})
@@ -649,71 +679,9 @@ class WorkFilterMixin:
         return [value for value in cleaned_values if str(value).isdigit()]
 
 
-class SentimentAnalysisView(WorkFilterMixin, APIView):
+class SentimentRunMixin(WorkFilterMixin):
     default_min_segment_size = DEFAULT_MIN_SEGMENT_SIZE
     default_max_segment_size = DEFAULT_MAX_SEGMENT_SIZE
-
-    def post(self, request):
-        try:
-            min_segment_size = self.get_segment_size(
-                request.data.get("min_segment_size") or request.data.get("segment_size"),
-                self.default_min_segment_size,
-            )
-            max_segment_size = self.get_segment_size(
-                request.data.get("max_segment_size"),
-                self.default_max_segment_size,
-            )
-
-            if max_segment_size < min_segment_size:
-                max_segment_size = max(min_segment_size, self.default_max_segment_size)
-
-            work_ids = self.get_selected_work_ids(request.data)
-
-            if not work_ids:
-                return Response(
-                    {"detail": "Выберите произведения для анализа"},
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-            run = SentimentAnalysisRun.objects.create(
-                model_kind="rubert",
-                model_name=MODEL_DISPLAY_NAME,
-                segment_size=min_segment_size,
-                max_segment_size=max_segment_size,
-                window_step=0,
-                works_count=len(work_ids),
-                status="running",
-            )
-        except Exception as exc:
-            return Response(
-                {"detail": str(exc) or "Не удалось запустить анализ"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-        try:
-            task_id = async_task(
-                "corpora.tasks.run_sentiment_analysis",
-                run.id,
-                work_ids,
-            )
-        except Exception as exc:
-            run.status = "failed"
-            run.error_message = str(exc) or "Не удалось поставить анализ в очередь"
-            run.save(update_fields=["status", "error_message"])
-
-            return Response(
-                {"detail": run.error_message},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
-
-        return Response(
-            {
-                "run": SentimentAnalysisRunSerializer(run).data,
-                "task_id": task_id,
-                "results_count": 0,
-            },
-            status=status.HTTP_202_ACCEPTED,
-        )
 
     def get_selected_work_ids(self, data):
         queryset = Work.objects.exclude(plain_text="")
@@ -738,48 +706,91 @@ class SentimentAnalysisView(WorkFilterMixin, APIView):
 
         return segment_size
 
+    def create_run(self, work_ids, segment_size, max_segment_size=None, window_step=0):
+        return SentimentAnalysisRun.objects.create(
+            model_kind="rubert",
+            model_name=get_model_display_name(),
+            segment_size=segment_size,
+            max_segment_size=max_segment_size,
+            window_step=window_step,
+            works_count=len(work_ids),
+            status="running",
+        )
 
-class SentimentAnalysisResultsView(APIView):
-    def get(self, request, run_id=None):
+    def enqueue_run(self, run, work_ids):
         try:
-            run = self.get_run(run_id)
+            return async_task(
+                "corpora.tasks.run_sentiment_analysis",
+                run.id,
+                work_ids,
+            )
+        except Exception as exc:
+            run.status = "failed"
+            run.error_message = str(exc) or "Не удалось поставить анализ в очередь"
+            run.save(update_fields=["status", "error_message"])
+            raise
 
-            if not run:
+
+class SentimentAnalysisView(SentimentRunMixin, APIView):
+    def post(self, request):
+        try:
+            min_segment_size = self.get_segment_size(
+                request.data.get("min_segment_size") or request.data.get("segment_size"),
+                self.default_min_segment_size,
+            )
+            max_segment_size = self.get_segment_size(
+                request.data.get("max_segment_size"),
+                self.default_max_segment_size,
+            )
+
+            if max_segment_size < min_segment_size:
+                max_segment_size = max(min_segment_size, self.default_max_segment_size)
+
+            work_ids = self.get_selected_work_ids(request.data)
+
+            if not work_ids:
                 return Response(
-                    {"detail": "Результаты анализа не найдены"},
-                    status=status.HTTP_404_NOT_FOUND,
+                    {"detail": "Выберите произведения для анализа"},
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            results = SentimentAnalysisResult.objects.filter(run=run)
-
-            summary = self.build_summary(results)
+            run = self.create_run(
+                work_ids,
+                segment_size=min_segment_size,
+                max_segment_size=max_segment_size,
+                window_step=0,
+            )
         except Exception as exc:
             return Response(
-                {"detail": str(exc) or "Не удалось загрузить результаты анализа"},
+                {"detail": str(exc) or "Не удалось запустить анализ"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        return Response({
-            "run": SentimentAnalysisRunSerializer(run).data,
-            "summary": summary,
-            "totals": self.build_totals(summary),
-            "charts": {
-                "years": self.build_grouped_summary(summary, "year"),
-                "places": self.build_grouped_summary(summary, "place"),
+        try:
+            task_id = self.enqueue_run(run, work_ids)
+        except Exception:
+            return Response(
+                {"detail": run.error_message},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        return Response(
+            {
+                "run": SentimentAnalysisRunSerializer(run).data,
+                "task_id": task_id,
+                "results_count": 0,
             },
-        })
+            status=status.HTTP_202_ACCEPTED,
+        )
 
-    def get_run(self, run_id):
-        if run_id:
-            return SentimentAnalysisRun.objects.filter(id=run_id).first()
 
-        return SentimentAnalysisRun.objects.order_by("-created_at").first()
-
+class SentimentSummaryMixin:
     def build_summary(self, results):
         result_rows = results.values(
             "original_work_id",
             "snapshot_title",
             "snapshot_author",
+            "snapshot_recipient",
             "snapshot_date_from",
             "snapshot_date_to",
             "snapshot_genre",
@@ -805,10 +816,11 @@ class SentimentAnalysisResultsView(APIView):
                     "original_work_id": result["original_work_id"],
                     "title": result["snapshot_title"],
                     "author": result["snapshot_author"],
+                    "recipient": result["snapshot_recipient"],
                     "date": self.format_result_date(result),
                     "date_from": result["snapshot_date_from"],
                     "date_to": result["snapshot_date_to"],
-                    "year": self.extract_date_group_label(self.format_result_date(result)),
+                    "year": self.extract_year_from_date_to(result["snapshot_date_to"]),
                     "genre": result["snapshot_genre"],
                     "place": result["snapshot_place"],
                     "segments_count": result["segments_count"],
@@ -834,18 +846,11 @@ class SentimentAnalysisResultsView(APIView):
 
         return date_from or date_to
 
-    def extract_date_group_label(self, date_value):
-        date_text = str(date_value or "").strip()
-
-        if not date_text:
-            return ""
-
-        if "/" in date_text:
-            return date_text
-
+    def extract_year_from_date_to(self, date_to):
+        date_text = str(date_to or "").strip()
         match = re.search(r"\d{4}", date_text)
 
-        return match.group(0) if match else date_text
+        return match.group(0) if match else ""
 
     def build_totals(self, summaries):
         totals = {
@@ -914,6 +919,74 @@ class SentimentAnalysisResultsView(APIView):
         return sorted(grouped_items, key=lambda item: (-item["segments_count"], item["label"]))
 
 
+class SentimentAnalysisResultsView(SentimentSummaryMixin, APIView):
+    def get(self, request, run_id=None):
+        try:
+            run = self.get_run(run_id)
+
+            if not run:
+                return Response(
+                    {"detail": "Результаты анализа не найдены"},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+            results = SentimentAnalysisResult.objects.filter(run=run)
+
+            summary = self.build_summary(results)
+        except Exception as exc:
+            return Response(
+                {"detail": str(exc) or "Не удалось загрузить результаты анализа"},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        return Response({
+            "run": SentimentAnalysisRunSerializer(run).data,
+            "summary": summary,
+            "totals": self.build_totals(summary),
+            "charts": {
+                "years": self.build_grouped_summary(summary, "year"),
+                "places": self.build_grouped_summary(summary, "place"),
+            },
+        })
+
+    def get_run(self, run_id):
+        if run_id:
+            return SentimentAnalysisRun.objects.filter(id=run_id).first()
+
+        return SentimentAnalysisRun.objects.order_by("-created_at").first()
+
+
+class SentimentAnalysisWorkFragmentsView(APIView):
+    def get(self, request, run_id, original_work_id):
+        run = SentimentAnalysisRun.objects.filter(id=run_id).first()
+
+        if not run:
+            return Response(
+                {"detail": "Результаты анализа не найдены"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        fragments = list(
+            SentimentAnalysisResult.objects
+            .filter(run=run, original_work_id=original_work_id)
+            .order_by("segment_index")
+            .values(
+                "segment_index",
+                "word_start",
+                "word_end",
+                "text",
+                "label",
+                "confidence",
+            )
+        )
+
+        return Response({
+            "run": SentimentAnalysisRunSerializer(run).data,
+            "original_work_id": original_work_id,
+            "fragments": fragments,
+        })
+
+
 class SentimentAnalysisRunsView(APIView):
     def get(self, request):
         runs = SentimentAnalysisRun.objects.order_by("-created_at")
@@ -968,6 +1041,12 @@ class WorkViewSet(WorkFilterMixin, EditableModelViewSet):
                 .values_list("author", flat=True)
                 .distinct()
                 .order_by("author")
+            ),
+            "recipients": list(
+                Work.objects.exclude(recipient="")
+                .values_list("recipient", flat=True)
+                .distinct()
+                .order_by("recipient")
             ),
             "languages": list(
                 Work.objects.exclude(language="")

@@ -16,6 +16,7 @@ const workForm = ref(createEmptyWorkForm())
 
 const workId = computed(() => route.params.id)
 const pdfPages = computed(() => parsePages(work.value?.pages || ""))
+const firstPdfPage = computed(() => pdfPages.value[0] || null)
 const canPreviewPdf = computed(() => {
   return work.value?.volume_pdf_url && work.value?.volume_pdf_kind === "pdf"
 })
@@ -31,7 +32,6 @@ const visibleSourceTabs = computed(() => {
 
   return tabs
 })
-const selectedPdfPage = ref(null)
 
 const displayedContent = computed(() => {
   if (!work.value) return ""
@@ -47,6 +47,7 @@ const workFieldGroups = [
     { key: "title_short", label: "Краткое название" },
     { key: "title_desc", label: "Описание" },
     { key: "author", label: "Автор" },
+    { key: "recipient", label: "Адресат" },
   ],
   [
     { key: "genre", label: "Жанр" },
@@ -69,6 +70,7 @@ function createEmptyWorkForm() {
     place: "",
     pages: "",
     author: "",
+    recipient: "",
     language: "",
     title_desc: "",
     title_short: "",
@@ -96,6 +98,7 @@ const properties = computed(() => {
     { label: "Краткое название", value: work.value.title_short },
     { label: "Описание", value: work.value.title_desc },
     { label: "Автор", value: work.value.author },
+    { label: "Адресат", value: work.value.recipient },
     { label: "Жанр", value: work.value.genre },
     { label: "Дата", value: formatWorkDate(work.value) },
     { label: "Страницы", value: work.value.pages },
@@ -190,6 +193,7 @@ function fillWorkForm() {
     place: work.value.place || "",
     pages: work.value.pages || "",
     author: work.value.author || "",
+    recipient: work.value.recipient || "",
     language: work.value.language || "",
     title_desc: work.value.title_desc || "",
     title_short: work.value.title_short || "",
@@ -275,10 +279,6 @@ async function fetchWork() {
 
 watch(workId, () => {
   fetchWork()
-})
-
-watch(pdfPages, (pages) => {
-  selectedPdfPage.value = pages[0] || null
 })
 
 watch(canPreviewPdf, (canPreview) => {
@@ -469,30 +469,11 @@ onMounted(() => {
               </div>
             </div>
 
-            <div v-else class="grid min-h-[42rem] gap-0 xl:grid-cols-[14rem_minmax(0,1fr)]">
-              <aside class="border-b border-slate-200 p-4 xl:border-b-0 xl:border-r">
-                <div class="grid grid-cols-2 gap-2 xl:grid-cols-1">
-                  <button
-                    v-for="page in pdfPages"
-                    :key="page"
-                    type="button"
-                    @click="selectedPdfPage = page"
-                    :class="[
-                      'rounded-xl border px-3 py-2 text-sm font-medium',
-                      selectedPdfPage === page
-                        ? 'border-slate-900 bg-slate-900 text-white'
-                        : 'border-slate-300 text-slate-700 hover:bg-slate-100',
-                    ]"
-                  >
-                    Страница {{ page }}
-                  </button>
-                </div>
-              </aside>
-
+            <div v-else>
               <iframe
-                v-if="selectedPdfPage"
-                :src="pdfPageUrl(selectedPdfPage)"
-                :title="`Страница ${selectedPdfPage}`"
+                v-if="firstPdfPage"
+                :src="pdfPageUrl(firstPdfPage)"
+                :title="`Страница ${firstPdfPage}`"
                 class="h-[72vh] min-h-[42rem] w-full border-0 bg-slate-100"
               />
             </div>

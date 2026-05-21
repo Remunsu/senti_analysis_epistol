@@ -40,7 +40,7 @@ function formatWorkDate(work) {
   const dateTo = String(work.date_to || "").trim()
 
   if (dateFrom && dateTo && dateFrom !== dateTo) {
-    return `${dateFrom}-${dateTo}`
+    return `${dateFrom} - ${dateTo}`
   }
 
   return dateFrom || dateTo || work.date || ""

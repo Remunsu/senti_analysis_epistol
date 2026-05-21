@@ -57,6 +57,7 @@ class WorkListSerializer(serializers.ModelSerializer):
             "title",
             "title_short",
             "author",
+            "recipient",
             "genre",
             "date",
             "date_from",

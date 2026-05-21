@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .api import (
     SentimentAnalysisRunsView,
     SentimentAnalysisResultsView,
+    SentimentAnalysisWorkFragmentsView,
     SentimentAnalysisView,
     SentimentAnnotationExportView,
     SentimentAnnotationSkipView,
@@ -24,6 +25,10 @@ urlpatterns = [
     path("sentiment/runs/", SentimentAnalysisRunsView.as_view()),
     path("sentiment/results/", SentimentAnalysisResultsView.as_view()),
     path("sentiment/results/<int:run_id>/", SentimentAnalysisResultsView.as_view()),
+    path(
+        "sentiment/results/<int:run_id>/works/<int:original_work_id>/",
+        SentimentAnalysisWorkFragmentsView.as_view(),
+    ),
     path("upload/", XMLUploadView.as_view()),
 ]
 

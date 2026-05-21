@@ -19,6 +19,10 @@ const charts = ref({
 })
 const loading = ref(false)
 const error = ref("")
+const expandedWorkIds = ref(new Set())
+const fragmentsByWorkId = ref({})
+const fragmentLoadingByWorkId = ref({})
+const fragmentErrorsByWorkId = ref({})
 let pollTimer = null
 
 const runId = computed(() => route.params.runId)
@@ -26,6 +30,21 @@ const runId = computed(() => route.params.runId)
 const yearGroups = computed(() => charts.value.years || [])
 const placeGroups = computed(() => (charts.value.places || []).slice(0, 12))
 const hasChartData = computed(() => yearGroups.value.length || placeGroups.value.length)
+
+const sentimentLabels = {
+  "-1": {
+    label: "Негативная",
+    class: "bg-red-50 text-red-700 ring-red-200",
+  },
+  "0": {
+    label: "Нейтральная",
+    class: "bg-slate-100 text-slate-700 ring-slate-200",
+  },
+  "1": {
+    label: "Позитивная",
+    class: "bg-emerald-50 text-emerald-700 ring-emerald-200",
+  },
+}
 
 function percent(value, total) {
   if (!total) return 0
@@ -60,6 +79,71 @@ function segmentationLabel(runData) {
   }
 
   return `фрагменты по ${runData.segment_size} слов`
+}
+
+function sentimentMeta(label) {
+  return sentimentLabels[label] || {
+    label: label || "Неизвестно",
+    class: "bg-slate-100 text-slate-700 ring-slate-200",
+  }
+}
+
+function isWorkExpanded(originalWorkId) {
+  return expandedWorkIds.value.has(originalWorkId)
+}
+
+function toggleExpandedWork(originalWorkId) {
+  const nextExpandedIds = new Set(expandedWorkIds.value)
+
+  if (nextExpandedIds.has(originalWorkId)) {
+    nextExpandedIds.delete(originalWorkId)
+    expandedWorkIds.value = nextExpandedIds
+    return
+  }
+
+  nextExpandedIds.add(originalWorkId)
+  expandedWorkIds.value = nextExpandedIds
+
+  if (!fragmentsByWorkId.value[originalWorkId]) {
+    fetchWorkFragments(originalWorkId)
+  }
+}
+
+async function fetchWorkFragments(originalWorkId) {
+  fragmentLoadingByWorkId.value = {
+    ...fragmentLoadingByWorkId.value,
+    [originalWorkId]: true,
+  }
+  fragmentErrorsByWorkId.value = {
+    ...fragmentErrorsByWorkId.value,
+    [originalWorkId]: "",
+  }
+
+  try {
+    const response = await fetch(
+      `${API_BASE_URL}/sentiment/results/${runId.value}/works/${originalWorkId}/`
+    )
+    const data = await readApiResponse(response, "Не удалось загрузить фрагменты")
+
+    if (!response.ok) {
+      throw new Error(data.detail || "Не удалось загрузить фрагменты")
+    }
+
+    fragmentsByWorkId.value = {
+      ...fragmentsByWorkId.value,
+      [originalWorkId]: data.fragments || [],
+    }
+  } catch (err) {
+    fragmentErrorsByWorkId.value = {
+      ...fragmentErrorsByWorkId.value,
+      [originalWorkId]: err.message || "Неизвестная ошибка",
+    }
+  } finally {
+    fragmentLoadingByWorkId.value = {
+      ...fragmentLoadingByWorkId.value,
+      [originalWorkId]: false,
+    }
+  }
 }
 
 function clearPollTimer() {
@@ -121,6 +205,10 @@ async function fetchResults({ silent = false } = {}) {
 
 watch(runId, () => {
   clearPollTimer()
+  expandedWorkIds.value = new Set()
+  fragmentsByWorkId.value = {}
+  fragmentLoadingByWorkId.value = {}
+  fragmentErrorsByWorkId.value = {}
   fetchResults()
 })
 
@@ -316,6 +404,7 @@ onUnmounted(() => {
             <table class="w-full border-collapse text-left">
               <thead class="bg-slate-100 text-sm text-slate-700">
                 <tr>
+                  <th class="w-14 px-5 py-3 font-semibold"></th>
                   <th class="w-[36%] px-5 py-3 font-semibold">Письмо</th>
                   <th class="w-[12%] px-5 py-3 font-semibold">Среднее</th>
                   <th class="w-[12%] px-5 py-3 font-semibold">Нег.</th>
@@ -326,34 +415,101 @@ onUnmounted(() => {
               </thead>
 
               <tbody class="divide-y divide-slate-200">
-                <tr
+                <template
                   v-for="item in summary"
                   :key="item.original_work_id"
-                  class="hover:bg-slate-50"
                 >
-                  <td class="px-5 py-3">
-                    <RouterLink
-                      v-if="item.work_id"
-                      :to="{ name: 'work-detail', params: { id: item.work_id } }"
-                      class="font-medium text-slate-900 hover:text-slate-600 hover:underline"
-                    >
-                      {{ item.title || "Без названия" }}
-                    </RouterLink>
-                    <span v-else class="font-medium text-slate-900">
-                      {{ item.title || "Без названия" }}
-                    </span>
-                    <p class="mt-1 text-sm text-slate-500">
-                      {{ item.author || "Автор не указан" }} · {{ item.date || "Дата не указана" }}
-                    </p>
-                  </td>
-                  <td class="px-5 py-3 font-semibold" :class="scoreClass(item.mean_score)">
-                    {{ item.mean_score.toFixed(2) }}
-                  </td>
-                  <td class="px-5 py-3 text-red-700">{{ percent(item.negative_count, item.segments_count) }}%</td>
-                  <td class="px-5 py-3 text-slate-700">{{ percent(item.neutral_count, item.segments_count) }}%</td>
-                  <td class="px-5 py-3 text-emerald-700">{{ percent(item.positive_count, item.segments_count) }}%</td>
-                  <td class="px-5 py-3 text-slate-700">{{ item.segments_count }}</td>
-                </tr>
+                  <tr class="hover:bg-slate-50">
+                    <td class="px-5 py-3 align-top">
+                      <button
+                        type="button"
+                        :aria-expanded="isWorkExpanded(item.original_work_id)"
+                        :aria-label="isWorkExpanded(item.original_work_id) ? 'Скрыть фрагменты' : 'Показать фрагменты'"
+                        :title="isWorkExpanded(item.original_work_id) ? 'Скрыть фрагменты' : 'Показать фрагменты'"
+                        class="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-300 text-lg leading-none text-slate-700 hover:bg-slate-100"
+                        @click="toggleExpandedWork(item.original_work_id)"
+                      >
+                        {{ isWorkExpanded(item.original_work_id) ? "-" : "+" }}
+                      </button>
+                    </td>
+                    <td class="px-5 py-3">
+                      <RouterLink
+                        v-if="item.work_id"
+                        :to="{ name: 'work-detail', params: { id: item.work_id } }"
+                        class="font-medium text-slate-900 hover:text-slate-600 hover:underline"
+                      >
+                        {{ item.title || "Без названия" }}
+                      </RouterLink>
+                      <span v-else class="font-medium text-slate-900">
+                        {{ item.title || "Без названия" }}
+                      </span>
+                      <p class="mt-1 text-sm text-slate-500">
+                        {{ item.author || "Автор не указан" }} · {{ item.date || "Дата не указана" }}
+                      </p>
+                    </td>
+                    <td class="px-5 py-3 font-semibold" :class="scoreClass(item.mean_score)">
+                      {{ item.mean_score.toFixed(2) }}
+                    </td>
+                    <td class="px-5 py-3 text-red-700">{{ percent(item.negative_count, item.segments_count) }}%</td>
+                    <td class="px-5 py-3 text-slate-700">{{ percent(item.neutral_count, item.segments_count) }}%</td>
+                    <td class="px-5 py-3 text-emerald-700">{{ percent(item.positive_count, item.segments_count) }}%</td>
+                    <td class="px-5 py-3 text-slate-700">{{ item.segments_count }}</td>
+                  </tr>
+
+                  <tr v-if="isWorkExpanded(item.original_work_id)" class="bg-slate-50/70">
+                    <td colspan="7" class="px-5 py-4">
+                      <p
+                        v-if="fragmentLoadingByWorkId[item.original_work_id]"
+                        class="text-sm text-slate-500"
+                      >
+                        Загружаю фрагменты...
+                      </p>
+
+                      <p
+                        v-else-if="fragmentErrorsByWorkId[item.original_work_id]"
+                        class="text-sm text-red-700"
+                      >
+                        {{ fragmentErrorsByWorkId[item.original_work_id] }}
+                      </p>
+
+                      <div
+                        v-else-if="fragmentsByWorkId[item.original_work_id]?.length"
+                        class="space-y-3"
+                      >
+                        <article
+                          v-for="fragment in fragmentsByWorkId[item.original_work_id]"
+                          :key="fragment.segment_index"
+                          class="rounded-xl border border-slate-200 bg-white p-4"
+                        >
+                          <div class="mb-3 flex flex-wrap items-center justify-between gap-3">
+                            <div class="flex flex-wrap items-center gap-3">
+                              <p class="text-sm font-semibold text-slate-900">
+                                Фрагмент {{ fragment.segment_index + 1 }}
+                              </p>
+                              <span
+                                class="rounded-full px-3 py-1 text-xs font-medium ring-1"
+                                :class="sentimentMeta(fragment.label).class"
+                              >
+                                {{ sentimentMeta(fragment.label).label }}
+                              </span>
+                            </div>
+                            <p class="text-sm text-slate-500">
+                              Слова {{ fragment.word_start + 1 }}-{{ fragment.word_end }}
+                            </p>
+                          </div>
+
+                          <p class="whitespace-pre-wrap text-sm leading-6 text-slate-900">
+                            {{ fragment.text }}
+                          </p>
+                        </article>
+                      </div>
+
+                      <p v-else class="text-sm text-slate-500">
+                        Фрагменты еще не появились.
+                      </p>
+                    </td>
+                  </tr>
+                </template>
               </tbody>
             </table>
           </div>

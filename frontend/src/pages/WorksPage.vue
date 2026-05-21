@@ -14,6 +14,7 @@ const volumes = ref([])
 const filterOptions = ref({
   genres: [],
   authors: [],
+  recipients: [],
   languages: [],
   places: [],
   dates: [],
@@ -44,6 +45,7 @@ let orderingWatcherReady = false
 const filterFields = [
   { key: "volume", label: "Том" },
   { key: "author", label: "Автор" },
+  { key: "recipient", label: "Адресат" },
   { key: "genre", label: "Жанр" },
   { key: "language", label: "Язык" },
   { key: "place", label: "Место" },
@@ -104,6 +106,7 @@ function getFilterValueOptions(fieldInput) {
 
   const optionMap = {
     author: filterOptions.value.authors,
+    recipient: filterOptions.value.recipients,
     genre: filterOptions.value.genres,
     language: filterOptions.value.languages,
     place: filterOptions.value.places,
@@ -167,6 +170,12 @@ function removeFilterRow(filterId) {
 function clearFilterRows() {
   filterRows.value = []
   savePageState()
+}
+
+function hasVolumeFilterValue() {
+  return filterRows.value.some((row) => {
+    return getFilterField(row.field)?.key === "volume" && String(row.value || "").trim()
+  })
 }
 
 function savePageState() {
@@ -340,11 +349,7 @@ async function analyzeSelectedWorks() {
       headers: {
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        all_filtered: allFilteredSelected.value,
-        filters_query: allFilteredSelected.value ? buildAnalysisFilterParams().toString() : "",
-        work_ids: allFilteredSelected.value ? [] : [...selectedWorkIds.value],
-      }),
+      body: JSON.stringify(buildAnalysisRequestBody()),
     })
     const data = await readApiResponse(response, "Не удалось выполнить анализ")
 
@@ -357,6 +362,14 @@ async function analyzeSelectedWorks() {
     error.value = err.message || "Неизвестная ошибка"
   } finally {
     analyzing.value = false
+  }
+}
+
+function buildAnalysisRequestBody() {
+  return {
+    all_filtered: allFilteredSelected.value,
+    filters_query: allFilteredSelected.value ? buildAnalysisFilterParams().toString() : "",
+    work_ids: allFilteredSelected.value ? [] : [...selectedWorkIds.value],
   }
 }
 
@@ -446,11 +459,22 @@ watch(filterRows, () => {
 onMounted(async () => {
   try {
     const restored = restorePageState()
-    await Promise.all([
-      fetchWorks(restored ? currentPage.value : 1),
-      fetchVolumes(),
-      fetchFilterOptions(),
-    ])
+    const page = restored ? currentPage.value : 1
+
+    if (restored && hasVolumeFilterValue()) {
+      await fetchVolumes()
+      await Promise.all([
+        fetchWorks(page),
+        fetchFilterOptions(),
+      ])
+    } else {
+      await Promise.all([
+        fetchWorks(page),
+        fetchVolumes(),
+        fetchFilterOptions(),
+      ])
+    }
+
     orderingWatcherReady = true
   } catch (err) {
     error.value = err.message || "Неизвестная ошибка"
@@ -626,13 +650,15 @@ onMounted(async () => {
             Обновление...
           </p>
           
-          <button
-            @click="analyzeSelectedWorks"
-            :disabled="selectedWorksCount === 0 || analyzing"
-            class="rounded-xl bg-slate-900 px-5 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
-          >
-            {{ analyzing ? "Анализирую..." : "Анализировать выбранные" }}
-          </button>
+          <div class="flex flex-wrap gap-3">
+            <button
+              @click="analyzeSelectedWorks"
+              :disabled="selectedWorksCount === 0 || analyzing"
+              class="rounded-xl bg-slate-900 px-5 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              {{ analyzing ? "Анализирую..." : "Анализировать выбранные" }}
+            </button>
+          </div>
         </div>
 
         <WorksTable

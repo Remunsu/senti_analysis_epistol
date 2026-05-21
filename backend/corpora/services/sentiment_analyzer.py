@@ -6,10 +6,6 @@ from pathlib import Path
 from django.conf import settings
 from transformers import pipeline
 
-
-MODEL_REPOSITORY_DIR = "models--blanchefort--rubert-base-cased-sentiment-rusentiment"
-MODEL_DISPLAY_NAME = "blanchefort/rubert-base-cased-sentiment-rusentiment"
-
 LABEL_TO_POLARITY = {
     "NEGATIVE": "-1",
     "NEUTRAL": "0",
@@ -18,37 +14,41 @@ LABEL_TO_POLARITY = {
 
 
 def get_model_path() -> Path:
+    model_source_path, repo_root = get_model_source_path()
+
+    return resolve_model_path(model_source_path, repo_root)
+
+
+def get_model_display_name() -> str:
+    model_source_path, _ = get_model_source_path()
+
+    return model_source_path.name
+
+
+def get_model_source_path():
     configured_path = os.getenv("SENTIMENT_MODEL_PATH")
     repo_root = Path(settings.BASE_DIR).parent
 
-    if configured_path:
-        return resolve_model_path(Path(configured_path), repo_root)
+    if not configured_path:
+        raise FileNotFoundError(
+            "Не задан SENTIMENT_MODEL_PATH в .env. "
+            "Укажите путь к локальной папке модели."
+        )
 
-    default_candidates = [
-        repo_root / "models" / MODEL_REPOSITORY_DIR,
-        Path.home() / ".cache" / "huggingface" / "hub" / MODEL_REPOSITORY_DIR,
-    ]
-
-    for candidate in default_candidates:
-        try:
-            return resolve_model_path(candidate, repo_root)
-        except FileNotFoundError:
-            continue
-
-    searched_paths = "\n".join(str(path) for path in default_candidates)
-
-    raise FileNotFoundError(
-        "Не найдена локальная RuBERT-модель. "
-        "Скопируйте папку модели в repo_root/models или укажите SENTIMENT_MODEL_PATH в .env. "
-        f"Проверенные пути:\n{searched_paths}"
-    )
+    return normalize_model_path(Path(configured_path), repo_root), repo_root
 
 
-def resolve_model_path(path: Path, repo_root: Path) -> Path:
+def normalize_model_path(path: Path, repo_root: Path) -> Path:
     model_path = path.expanduser()
 
     if not model_path.is_absolute():
         model_path = repo_root / model_path
+
+    return model_path
+
+
+def resolve_model_path(path: Path, repo_root: Path) -> Path:
+    model_path = normalize_model_path(path, repo_root)
 
     if (model_path / "config.json").exists():
         return model_path
@@ -56,10 +56,9 @@ def resolve_model_path(path: Path, repo_root: Path) -> Path:
     snapshots_dir = model_path / "snapshots"
 
     if not snapshots_dir.exists():
-        snapshots_dir = model_path / MODEL_REPOSITORY_DIR / "snapshots"
-
-    if not snapshots_dir.exists():
-        raise FileNotFoundError(f"Не найдена папка snapshots в {model_path}")
+        raise FileNotFoundError(
+            f"В {model_path} не найден config.json или папка snapshots"
+        )
 
     snapshots = sorted(
         snapshot for snapshot in snapshots_dir.iterdir()
@@ -101,12 +100,14 @@ def analyze_fragments(fragments):
     results = []
 
     for fragment, prediction in zip(fragments, predictions):
-        label = prediction["label"]
-
         results.append({
             **fragment,
-            "label": LABEL_TO_POLARITY.get(label, "0"),
+            "label": map_prediction_label(prediction["label"]),
             "confidence": float(prediction["score"]),
         })
 
     return results
+
+
+def map_prediction_label(label):
+    return LABEL_TO_POLARITY.get(str(label).upper(), "0")

@@ -14,7 +14,17 @@ def run_sentiment_analysis(run_id, work_ids, *legacy_segmentation_args):
             Work.objects
             .filter(id__in=work_ids)
             .exclude(plain_text="")
-            .only("id", "plain_text", "title", "author", "date_from", "date_to", "genre", "place")
+            .only(
+                "id",
+                "plain_text",
+                "title",
+                "author",
+                "recipient",
+                "date_from",
+                "date_to",
+                "genre",
+                "place",
+            )
             .order_by("id")
         )
         results_count = 0
@@ -75,6 +85,7 @@ def build_work_snapshot(work):
         "original_work_id": work.id,
         "snapshot_title": work.title,
         "snapshot_author": work.author,
+        "snapshot_recipient": work.recipient,
         "snapshot_date_from": work.date_from,
         "snapshot_date_to": work.date_to,
         "snapshot_genre": work.genre,

@@ -22,6 +22,20 @@ DB_USER=
 DB_PASSWORD=
 DB_HOST=localhost
 DB_PORT=5432
+SENTIMENT_MODEL_PATH=
+RECIPIENT_GLINER_MODEL_PATH=
+```
+`RECIPIENT_GLINER_MODEL_PATH` can point either to the model snapshot itself or to a Hugging Face cache folder like `models--urchade--gliner_multi-v2.1`.
+For fully offline GLiNER usage, the GLiNER snapshot must also contain tokenizer files. If they are missing, save the base tokenizer into the snapshot, for example from `backend`:
+```
+python - <<'PY'
+from pathlib import Path
+from transformers import AutoTokenizer
+
+root = Path("../models/models--urchade--gliner_multi-v2.1").resolve()
+snapshot = root / "snapshots" / (root / "refs" / "main").read_text().strip()
+AutoTokenizer.from_pretrained("microsoft/mdeberta-v3-base").save_pretrained(snapshot)
+PY
 ```
 
 Then create separate database and user. Add them in *.env*.\

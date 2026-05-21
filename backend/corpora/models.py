@@ -29,6 +29,7 @@ class Work(models.Model):
     pages = models.CharField(max_length=50, blank=True)
 
     author = models.CharField(max_length=50, blank=True)
+    recipient = models.CharField(max_length=200, blank=True)
     language = models.CharField(max_length=20, blank=True)
     title_desc = models.CharField(max_length=200, blank=True)
     title_short = models.CharField(max_length=100, blank=True)
@@ -43,15 +44,6 @@ class Work(models.Model):
     def __str__(self):
         return self.title
     
-class Token(models.Model):
-    work = models.ForeignKey(Work, on_delete=models.CASCADE, related_name="tokens")
-
-    text_position = models.IntegerField(db_index=True)
-    text = models.CharField(max_length=20, blank=True)
-    lemma = models.CharField(max_length=20, blank=True, db_index=True)
-    pos = models.CharField(max_length=20, blank=True)
-
-
 class SentimentFragmentLabel(models.Model):
     LABEL_CHOICES = [
         ("-1", "Негативная"),
@@ -130,6 +122,7 @@ class SentimentAnalysisResult(models.Model):
 
     snapshot_title = models.CharField(max_length=200, blank=True)
     snapshot_author = models.CharField(max_length=50, blank=True)
+    snapshot_recipient = models.CharField(max_length=200, blank=True)
     snapshot_date_from = models.CharField(max_length=100, blank=True)
     snapshot_date_to = models.CharField(max_length=100, blank=True)
     snapshot_genre = models.CharField(max_length=20, blank=True)
