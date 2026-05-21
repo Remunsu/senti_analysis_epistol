@@ -21,9 +21,20 @@ class VolumeAdmin(admin.ModelAdmin):
 
 @admin.register(Work)
 class WorkAdmin(admin.ModelAdmin):
-    list_display = ("id", "number", "title", "genre", "author", "date_from", "date_to", "pages", "volume")
+    list_display = (
+        "id",
+        "number",
+        "title",
+        "genre",
+        "author",
+        "recipient",
+        "date_from",
+        "date_to",
+        "pages",
+        "volume",
+    )
     list_filter = ("volume", "genre", "language", "date_from", "date_to")
-    search_fields = ("title", "plain_text")
+    search_fields = ("title", "author", "recipient", "plain_text")
 
 
 @admin.register(Token)

@@ -482,6 +482,7 @@ class SentimentAnnotationExportView(SentimentAnnotationCriteriaMixin, APIView):
             "work_number",
             "title",
             "author",
+            "recipient",
             "genre",
             "language",
             "date_from",
@@ -517,6 +518,7 @@ class SentimentAnnotationExportView(SentimentAnnotationCriteriaMixin, APIView):
                 work.number,
                 work.title,
                 work.author,
+                work.recipient,
                 work.genre,
                 work.language,
                 work.date_from,
@@ -539,6 +541,7 @@ class WorkFilterMixin:
     multi_value_filter_fields = [
         "volume",
         "author",
+        "recipient",
         "genre",
         "language",
         "place",
@@ -787,6 +790,7 @@ class SentimentSummaryMixin:
             "original_work_id",
             "snapshot_title",
             "snapshot_author",
+            "snapshot_recipient",
             "snapshot_date_from",
             "snapshot_date_to",
             "snapshot_genre",
@@ -812,6 +816,7 @@ class SentimentSummaryMixin:
                     "original_work_id": result["original_work_id"],
                     "title": result["snapshot_title"],
                     "author": result["snapshot_author"],
+                    "recipient": result["snapshot_recipient"],
                     "date": self.format_result_date(result),
                     "date_from": result["snapshot_date_from"],
                     "date_to": result["snapshot_date_to"],
@@ -1179,6 +1184,12 @@ class WorkViewSet(WorkFilterMixin, EditableModelViewSet):
                 .values_list("author", flat=True)
                 .distinct()
                 .order_by("author")
+            ),
+            "recipients": list(
+                Work.objects.exclude(recipient="")
+                .values_list("recipient", flat=True)
+                .distinct()
+                .order_by("recipient")
             ),
             "languages": list(
                 Work.objects.exclude(language="")

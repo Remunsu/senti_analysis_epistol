@@ -4,6 +4,7 @@ from lxml import etree
 from django.db import transaction
 
 from corpora.models import Volume, Work, Token
+from corpora.services.recipient_extractor import extract_recipient_for_work
 
 
 NS = {"tei": "http://www.tei-c.org/ns/1.0"}
@@ -186,7 +187,7 @@ def extract_work_data(tei_node, volume: Volume) -> dict:
     raw_xml = etree.tostring(tei_node, encoding="unicode")
     plain_text = extract_plain_text(tei_node)
 
-    return {
+    work_data = {
         "volume": volume,
         "source_id": source_id[:20],
         "note": "",
@@ -204,6 +205,10 @@ def extract_work_data(tei_node, volume: Volume) -> dict:
         "plain_text": plain_text,
         "raw_xml": raw_xml,
     }
+
+    work_data["recipient"] = extract_recipient_for_work(work_data)
+
+    return work_data
 
 
 def apply_volume_data(volume: Volume, volume_data: dict):

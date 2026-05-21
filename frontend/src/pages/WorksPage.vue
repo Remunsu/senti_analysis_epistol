@@ -14,6 +14,7 @@ const volumes = ref([])
 const filterOptions = ref({
   genres: [],
   authors: [],
+  recipients: [],
   languages: [],
   places: [],
   dates: [],
@@ -45,6 +46,7 @@ let orderingWatcherReady = false
 const filterFields = [
   { key: "volume", label: "Том" },
   { key: "author", label: "Автор" },
+  { key: "recipient", label: "Адресат" },
   { key: "genre", label: "Жанр" },
   { key: "language", label: "Язык" },
   { key: "place", label: "Место" },
@@ -105,6 +107,7 @@ function getFilterValueOptions(fieldInput) {
 
   const optionMap = {
     author: filterOptions.value.authors,
+    recipient: filterOptions.value.recipients,
     genre: filterOptions.value.genres,
     language: filterOptions.value.languages,
     place: filterOptions.value.places,
