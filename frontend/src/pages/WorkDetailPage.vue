@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref, watch } from "vue"
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { RouterLink, useRoute } from "vue-router"
 import { API_BASE_URL, readApiResponse } from "../api"
 import { authFetch, fetchAuthStatus, isAuthenticated } from "../auth"
@@ -13,6 +13,9 @@ const error = ref("")
 const success = ref("")
 const selectedSource = ref("xml")
 const isEditing = ref(false)
+const splitContainer = ref(null)
+const textPanelPercent = ref(56)
+const isResizing = ref(false)
 const workForm = ref(createEmptyWorkForm())
 
 const workId = computed(() => route.params.id)
@@ -28,6 +31,9 @@ const canPreviewPdf = computed(() => {
   return work.value?.pdf_fragment_url || (work.value?.volume_pdf_url && work.value?.volume_pdf_kind === "pdf")
 })
 const pdfPreviewUrl = computed(() => work.value?.pdf_fragment_url || "")
+const splitStyle = computed(() => ({
+  "--left-pane-width": `${textPanelPercent.value}%`,
+}))
 const visibleSourceTabs = computed(() => {
   const tabs = [{ key: "xml", label: "XML" }]
 
@@ -199,6 +205,32 @@ function selectSource(source) {
   selectedSource.value = source
 }
 
+function startResizing(event) {
+  if (!splitContainer.value) return
+
+  isResizing.value = true
+  updatePanelWidth(event)
+  window.addEventListener("pointermove", updatePanelWidth)
+  window.addEventListener("pointerup", stopResizing)
+}
+
+function updatePanelWidth(event) {
+  const container = splitContainer.value
+
+  if (!container) return
+
+  const rect = container.getBoundingClientRect()
+  const percent = ((event.clientX - rect.left) / rect.width) * 100
+
+  textPanelPercent.value = Math.min(80, Math.max(45, Math.round(percent)))
+}
+
+function stopResizing() {
+  isResizing.value = false
+  window.removeEventListener("pointermove", updatePanelWidth)
+  window.removeEventListener("pointerup", stopResizing)
+}
+
 function fillWorkForm() {
   if (!work.value) return
 
@@ -309,6 +341,10 @@ onMounted(() => {
   fetchAuthStatus().catch(() => {})
   fetchWork()
 })
+
+onBeforeUnmount(() => {
+  stopResizing()
+})
 </script>
 
 <template>
@@ -396,7 +432,7 @@ onMounted(() => {
                 </label>
                 <textarea
                   v-model="workForm.plain_text"
-                  class="min-h-[28rem] w-full resize-y rounded-xl border border-slate-300 p-4 font-mono text-sm leading-6 text-slate-900 outline-none focus:border-slate-500"
+                  class="min-h-[28rem] w-full resize-none rounded-xl border border-slate-300 p-4 font-mono text-sm leading-6 text-slate-900 outline-none focus:border-slate-500"
                 />
               </div>
 
@@ -406,7 +442,7 @@ onMounted(() => {
                 </label>
                 <textarea
                   v-model="workForm.raw_xml"
-                  class="min-h-[28rem] w-full resize-y rounded-xl border border-slate-300 p-4 font-mono text-sm leading-6 text-slate-900 outline-none focus:border-slate-500"
+                  class="min-h-[28rem] w-full resize-none rounded-xl border border-slate-300 p-4 font-mono text-sm leading-6 text-slate-900 outline-none focus:border-slate-500"
                 />
               </div>
             </div>
@@ -484,7 +520,11 @@ onMounted(() => {
             </div>
           </div>
 
-          <div class="grid gap-0 xl:grid-cols-2">
+          <div
+            ref="splitContainer"
+            class="content-split-grid"
+            :style="splitStyle"
+          >
             <div class="border-b border-slate-200 xl:border-b-0 xl:border-r">
               <div class="border-b border-slate-200 px-5 py-3">
                 <h3 class="text-sm font-semibold text-slate-900">
@@ -494,9 +534,19 @@ onMounted(() => {
               <textarea
                 readonly
                 :value="work.plain_text || ''"
-                class="min-h-[36rem] w-full resize-y border-0 bg-white p-5 font-mono text-sm leading-6 text-slate-900 outline-none"
+                class="min-h-[36rem] w-full resize-none border-0 bg-white p-5 font-mono text-sm leading-6 text-slate-900 outline-none"
               />
             </div>
+
+            <button
+              type="button"
+              aria-label="Изменить ширину панелей"
+              :class="[
+                'resize-hitbox hidden cursor-col-resize xl:block',
+                isResizing ? 'is-resizing' : '',
+              ]"
+              @pointerdown.prevent="startResizing"
+            />
 
             <div>
               <div class="border-b border-slate-200 px-5 py-3">
@@ -532,7 +582,7 @@ onMounted(() => {
                 v-else
                 readonly
                 :value="work.raw_xml || ''"
-                class="min-h-[36rem] w-full resize-y border-0 bg-white p-5 font-mono text-sm leading-6 text-slate-900 outline-none"
+                class="min-h-[36rem] w-full resize-none border-0 bg-white p-5 font-mono text-sm leading-6 text-slate-900 outline-none"
               />
             </div>
           </div>
@@ -541,3 +591,33 @@ onMounted(() => {
     </div>
   </main>
 </template>
+
+<style scoped>
+.content-split-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 1280px) {
+  .content-split-grid {
+    position: relative;
+    grid-template-columns:
+      minmax(0, var(--left-pane-width))
+      minmax(0, calc(100% - var(--left-pane-width)));
+  }
+
+  .resize-hitbox {
+    position: absolute;
+    inset-block: 0;
+    left: var(--left-pane-width);
+    z-index: 10;
+    width: 1rem;
+    transform: translateX(-50%);
+    background: transparent;
+  }
+
+  .resize-hitbox.is-resizing {
+    background: rgb(15 23 42 / 0.04);
+  }
+}
+</style>
