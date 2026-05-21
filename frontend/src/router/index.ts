@@ -1,7 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import AnnotationPage from '../pages/AnnotationPage.vue'
 import NotFoundPage from '../pages/NotFoundPage.vue'
-import SentimentComparisonPage from '../pages/SentimentComparisonPage.vue'
 import SentimentResultsPage from '../pages/SentimentResultsPage.vue'
 import SentimentRunsPage from '../pages/SentimentRunsPage.vue'
 import UploadPage from '../pages/UploadPage.vue'
@@ -52,11 +51,6 @@ const router = createRouter({
       path: '/sentiment/results/:runId',
       name: 'sentiment-result-detail',
       component: SentimentResultsPage,
-    },
-    {
-      path: '/sentiment/compare/:baselineRunId/:candidateRunId',
-      name: 'sentiment-comparison',
-      component: SentimentComparisonPage,
     },
     {
       path: '/:pathMatch(.*)*',

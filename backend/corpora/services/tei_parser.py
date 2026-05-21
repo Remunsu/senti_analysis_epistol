@@ -3,7 +3,7 @@ from pathlib import Path
 from lxml import etree
 from django.db import transaction
 
-from corpora.models import Volume, Work, Token
+from corpora.models import Volume, Work
 from corpora.services.recipient_extractor import extract_recipient_for_work
 
 
@@ -125,33 +125,6 @@ def extract_plain_text(tei_node) -> str:
     return text.strip()
 
 
-def extract_tokens(work: Work, tei_node):
-    token_objects = []
-
-    words = tei_node.xpath(".//tei:text//tei:w", namespaces=NS)
-
-    for index, w in enumerate(words):
-        word_text = clean_text("".join(w.xpath("./text()", namespaces=NS)))
-        lemma = clean_text(w.get("lemma", ""))
-
-        pos = first_attr(w,'./tei:fs/tei:f[@name="category"]/tei:symbol/@value')
-
-        if not word_text or not lemma:
-            continue
-
-        token_objects.append(
-            Token(
-                work=work,
-                text_position=index,
-                text=word_text[:20],
-                lemma=lemma[:20],
-                pos=pos[:20],
-            )
-        )
-
-    Token.objects.bulk_create(token_objects, batch_size=2000)
-
-
 def extract_work_data(tei_node, volume: Volume) -> dict:
     source_id = first_text(tei_node, ".//tei:sourceDesc//tei:msIdentifier/tei:idno")
     number = to_int(first_attr(tei_node, ".//tei:sourceDesc//tei:head/tei:num/@value"))
@@ -220,10 +193,7 @@ def apply_volume_data(volume: Volume, volume_data: dict):
 
 def create_work_from_tei(tei_node, volume: Volume):
     work_data = extract_work_data(tei_node, volume)
-    work = Work.objects.create(**work_data)
-    extract_tokens(work, tei_node)
-
-    return work
+    return Work.objects.create(**work_data)
 
 
 @transaction.atomic

@@ -7,7 +7,7 @@ from django.test import override_settings
 from django.test import SimpleTestCase
 from lxml import etree
 
-from .api import SentimentSummaryMixin, WorkFilterMixin, build_sentiment_comparison_rows, delete_volume_and_files
+from .api import SentimentSummaryMixin, WorkFilterMixin, delete_volume_and_files
 from .services.sentiment_analyzer import get_model_display_name, map_prediction_label
 from .services.recipient_extractor import (
     extract_recipient_for_work,
@@ -163,42 +163,6 @@ class AnalysisSnapshotTests(SimpleTestCase):
         fragments = split_work_text("one two three four five six", run)
 
         self.assertEqual([fragment["word_start"] for fragment in fragments], [0, 2])
-
-    def test_build_sentiment_comparison_rows_matches_runs_by_original_work_id(self):
-        baseline_summary = [
-            {
-                "original_work_id": 12,
-                "work_id": 12,
-                "title": "Письмо",
-                "date": "1764-09-20",
-                "segments_count": 4,
-                "negative_count": 2,
-                "neutral_count": 1,
-                "positive_count": 1,
-                "mean_score": -0.25,
-            }
-        ]
-        candidate_summary = [
-            {
-                "original_work_id": 12,
-                "work_id": 12,
-                "title": "Письмо",
-                "date": "1764-09-20",
-                "segments_count": 2,
-                "negative_count": 0,
-                "neutral_count": 2,
-                "positive_count": 0,
-                "mean_score": 0,
-            }
-        ]
-
-        rows = build_sentiment_comparison_rows(baseline_summary, candidate_summary)
-
-        self.assertEqual(rows[0]["original_work_id"], 12)
-        self.assertEqual(rows[0]["baseline"]["segments_count"], 4)
-        self.assertEqual(rows[0]["candidate"]["segments_count"], 2)
-        self.assertEqual(rows[0]["mean_score_delta"], 0.25)
-        self.assertEqual(rows[0]["segments_delta"], -2)
 
     def test_extract_year_uses_date_to_only(self):
         summary = SentimentSummaryMixin()
