@@ -18,6 +18,8 @@ class VolumeSerializer(serializers.ModelSerializer):
             "title_short",
             "author",
             "xml_file",
+            "pdf_page_offset",
+            "pdf_extra_pages",
             "uploaded_at",
             "works_count",
             "pdf_url",
@@ -78,6 +80,9 @@ class WorkDetailSerializer(serializers.ModelSerializer):
     volume_pdf_url = serializers.SerializerMethodField()
     volume_pdf_name = serializers.SerializerMethodField()
     volume_pdf_kind = serializers.SerializerMethodField()
+    volume_pdf_page_offset = serializers.IntegerField(source="volume.pdf_page_offset", read_only=True)
+    volume_pdf_extra_pages = serializers.CharField(source="volume.pdf_extra_pages", read_only=True)
+    pdf_fragment_url = serializers.SerializerMethodField()
 
     class Meta:
         model = Work
@@ -94,6 +99,18 @@ class WorkDetailSerializer(serializers.ModelSerializer):
 
     def get_volume_pdf_kind(self, obj):
         return get_pdf_kind(obj.volume)
+
+    def get_pdf_fragment_url(self, obj):
+        if not obj.volume.facsimile_file or get_pdf_kind(obj.volume) != "pdf" or not obj.pages:
+            return ""
+
+        path = f"/api/works/{obj.id}/pdf-fragment/"
+        request = self.context.get("request")
+
+        if request:
+            return request.build_absolute_uri(path)
+
+        return path
 
 
 def format_work_date(work):

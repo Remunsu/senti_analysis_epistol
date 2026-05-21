@@ -7,7 +7,13 @@ from django.test import override_settings
 from django.test import SimpleTestCase
 from lxml import etree
 
-from .api import SentimentSummaryMixin, WorkFilterMixin, delete_volume_and_files
+from .api import (
+    SentimentSummaryMixin,
+    WorkFilterMixin,
+    delete_volume_and_files,
+    get_corrected_pdf_page,
+    parse_page_numbers,
+)
 from .services.sentiment_analyzer import get_model_display_name, map_prediction_label
 from .services.recipient_extractor import (
     extract_recipient_for_work,
@@ -20,7 +26,12 @@ from .services.recipient_extractor import (
     resolve_recipient_model_path,
     select_recipient_candidate,
 )
-from .services.djvu_outline import parse_djvu_outline, parse_outline_page_number
+from .services.djvu_outline import (
+    format_page_numbers,
+    is_extra_pdf_page_title,
+    parse_djvu_outline,
+    parse_outline_page_number,
+)
 from .services.tei_parser import extract_work_data, format_pages
 from .services.text_segments import split_text_into_word_segments
 from .tasks import build_work_snapshot, split_work_text
@@ -169,6 +180,14 @@ class DjvuOutlineTests(SimpleTestCase):
             ],
         )
 
+    def test_extra_pdf_page_title_detects_insert_markers(self):
+        self.assertTrue(is_extra_pdf_page_title("Вклейка после с. 12"))
+        self.assertTrue(is_extra_pdf_page_title("Plate 3"))
+        self.assertFalse(is_extra_pdf_page_title("Глава 1"))
+
+    def test_format_page_numbers_compacts_ranges(self):
+        self.assertEqual(format_page_numbers([10, 7, 8, 10, 12]), "7-8,10,12")
+
 
 class AnalysisSnapshotTests(SimpleTestCase):
     def test_build_work_snapshot_captures_result_metadata(self):
@@ -216,6 +235,16 @@ class WorkFilterTests(SimpleTestCase):
         filters = WorkFilterMixin()
 
         self.assertEqual(filters.clean_filter_values(["ЛМН. ПСС, 11", "11"], numeric=True), ["11"])
+
+
+class PdfPageMappingTests(SimpleTestCase):
+    def test_parse_page_numbers_expands_ranges(self):
+        self.assertEqual(parse_page_numbers("7-9, 12;14"), [7, 8, 9, 12, 14])
+
+    def test_corrected_pdf_page_applies_offset_and_extra_pages(self):
+        volume = SimpleNamespace(pdf_page_offset=5, pdf_extra_pages="10,14,18")
+
+        self.assertEqual(get_corrected_pdf_page(20, volume), 28)
 
 
 class SentimentAnalyzerTests(SimpleTestCase):

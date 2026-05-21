@@ -12,6 +12,8 @@ class Volume(models.Model):
 
     xml_file = models.FileField(upload_to="tei_volumes/")
     facsimile_file = models.FileField(upload_to="volume_facsimiles/", blank=True)
+    pdf_page_offset = models.IntegerField(default=0)
+    pdf_extra_pages = models.TextField(blank=True)
     uploaded_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

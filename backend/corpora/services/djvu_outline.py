@@ -3,6 +3,11 @@ import shutil
 import subprocess
 from pathlib import Path
 
+PDF_EXTRA_PAGE_TITLE_RE = re.compile(
+    r"(вклей|вкладн|иллюстр|ил\.|табл\.|таблица|портрет|insert|plate)",
+    flags=re.IGNORECASE,
+)
+
 
 def add_djvu_outline_to_pdf(djvu_path: Path, pdf_path: Path) -> bool:
     outline_text = read_djvu_outline(djvu_path)
@@ -16,6 +21,79 @@ def add_djvu_outline_to_pdf(djvu_path: Path, pdf_path: Path) -> bool:
         return False
 
     return write_pdf_outline(pdf_path, outline)
+
+
+def extract_pdf_extra_pages(pdf_path: Path) -> str:
+    from pypdf import PdfReader
+
+    reader = PdfReader(str(pdf_path))
+    outline = getattr(reader, "outline", None)
+
+    if outline is None:
+        outline = getattr(reader, "outlines", [])
+
+    pages = []
+
+    for destination in iter_pdf_outline_destinations(outline):
+        title = str(getattr(destination, "title", "") or destination).strip()
+
+        if not is_extra_pdf_page_title(title):
+            continue
+
+        try:
+            page_number = reader.get_destination_page_number(destination) + 1
+        except Exception:
+            continue
+
+        pages.append(page_number)
+
+    return format_page_numbers(pages)
+
+
+def iter_pdf_outline_destinations(outline):
+    if isinstance(outline, list):
+        for item in outline:
+            yield from iter_pdf_outline_destinations(item)
+
+        return
+
+    if outline is not None:
+        yield outline
+
+
+def is_extra_pdf_page_title(title: str) -> bool:
+    return bool(PDF_EXTRA_PAGE_TITLE_RE.search(str(title or "")))
+
+
+def format_page_numbers(values) -> str:
+    numbers = sorted({int(value) for value in values if int(value) > 0})
+
+    if not numbers:
+        return ""
+
+    ranges = []
+    start = numbers[0]
+    previous = numbers[0]
+
+    for number in numbers[1:]:
+        if number == previous + 1:
+            previous = number
+            continue
+
+        ranges.append(format_page_range(start, previous))
+        start = number
+        previous = number
+
+    ranges.append(format_page_range(start, previous))
+
+    return ",".join(ranges)
+
+
+def format_page_range(start: int, end: int) -> str:
+    if start == end:
+        return str(start)
+
+    return f"{start}-{end}"
 
 
 def read_djvu_outline(djvu_path: Path) -> str:

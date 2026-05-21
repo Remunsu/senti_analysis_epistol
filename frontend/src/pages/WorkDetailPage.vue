@@ -11,33 +11,31 @@ const loading = ref(false)
 const saving = ref(false)
 const error = ref("")
 const success = ref("")
-const selectedSource = ref("text")
+const selectedSource = ref("xml")
 const isEditing = ref(false)
 const workForm = ref(createEmptyWorkForm())
 
 const workId = computed(() => route.params.id)
 const pdfPages = computed(() => parsePages(work.value?.pages || ""))
 const firstPdfPage = computed(() => pdfPages.value[0] || null)
-const canPreviewPdf = computed(() => {
-  return work.value?.volume_pdf_url && work.value?.volume_pdf_kind === "pdf"
+const firstCorrectedPdfPage = computed(() => {
+  if (!firstPdfPage.value) return null
+
+  return getCorrectedPdfPage(firstPdfPage.value)
 })
+const pdfExtraPages = computed(() => parsePages(work.value?.volume_pdf_extra_pages || ""))
+const canPreviewPdf = computed(() => {
+  return work.value?.pdf_fragment_url || (work.value?.volume_pdf_url && work.value?.volume_pdf_kind === "pdf")
+})
+const pdfPreviewUrl = computed(() => work.value?.pdf_fragment_url || "")
 const visibleSourceTabs = computed(() => {
-  const tabs = [
-    { key: "text", label: "Текст" },
-    { key: "xml", label: "XML" },
-  ]
+  const tabs = [{ key: "xml", label: "XML" }]
 
   if (canPreviewPdf.value) {
     tabs.push({ key: "pdf", label: "PDF" })
   }
 
   return tabs
-})
-
-const displayedContent = computed(() => {
-  if (!work.value) return ""
-
-  return selectedSource.value === "xml" ? work.value.raw_xml || "" : work.value.plain_text || ""
 })
 
 const workFieldGroups = [
@@ -176,6 +174,25 @@ function pdfPageUrl(page) {
   return `${work.value.volume_pdf_url}#page=${page}&view=FitH`
 }
 
+function getCorrectedPdfPage(page) {
+  const offset = Number(work.value?.volume_pdf_page_offset || 0)
+  const extraPages = pdfExtraPages.value
+  let correctedPage = Math.max(1, page + offset)
+  let previousPage = 0
+  let attempts = 0
+
+  while (correctedPage !== previousPage && attempts < extraPages.length + 2) {
+    previousPage = correctedPage
+    correctedPage = Math.max(
+      1,
+      page + offset + extraPages.filter((extraPage) => extraPage <= previousPage).length,
+    )
+    attempts += 1
+  }
+
+  return correctedPage
+}
+
 function selectSource(source) {
   if (source === "pdf" && !canPreviewPdf.value) return
 
@@ -284,7 +301,7 @@ watch(workId, () => {
 
 watch(canPreviewPdf, (canPreview) => {
   if (!canPreview && selectedSource.value === "pdf") {
-    selectedSource.value = "text"
+    selectedSource.value = "xml"
   }
 })
 
@@ -431,6 +448,9 @@ onMounted(() => {
                 class="mt-1 text-sm text-slate-600"
               >
                 Страницы: {{ work.pages }}
+                <span v-if="firstCorrectedPdfPage && firstCorrectedPdfPage !== firstPdfPage">
+                  · PDF: {{ firstCorrectedPdfPage }}
+                </span>
               </p>
             </div>
 
@@ -464,30 +484,58 @@ onMounted(() => {
             </div>
           </div>
 
-          <template v-if="selectedSource === 'pdf'">
-            <div v-if="pdfPages.length === 0" class="p-5">
-              <div class="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
-                У произведения не указаны страницы для показа.
+          <div class="grid gap-0 xl:grid-cols-2">
+            <div class="border-b border-slate-200 xl:border-b-0 xl:border-r">
+              <div class="border-b border-slate-200 px-5 py-3">
+                <h3 class="text-sm font-semibold text-slate-900">
+                  Текст
+                </h3>
               </div>
-            </div>
-
-            <div v-else>
-              <iframe
-                v-if="firstPdfPage"
-                :src="pdfPageUrl(firstPdfPage)"
-                :title="`Страница ${firstPdfPage}`"
-                class="h-[72vh] min-h-[42rem] w-full border-0 bg-slate-100"
+              <textarea
+                readonly
+                :value="work.plain_text || ''"
+                class="min-h-[36rem] w-full resize-y border-0 bg-white p-5 font-mono text-sm leading-6 text-slate-900 outline-none"
               />
             </div>
-          </template>
 
-          <template v-else>
-            <textarea
-              readonly
-              :value="displayedContent"
-              class="min-h-[36rem] w-full resize-y border-0 bg-white p-5 font-mono text-sm leading-6 text-slate-900 outline-none"
-            />
-          </template>
+            <div>
+              <div class="border-b border-slate-200 px-5 py-3">
+                <h3 class="text-sm font-semibold text-slate-900">
+                  {{ selectedSource === "pdf" ? "PDF" : "XML" }}
+                </h3>
+              </div>
+
+              <template v-if="selectedSource === 'pdf'">
+                <div v-if="pdfPages.length === 0" class="p-5">
+                  <div class="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
+                    У произведения не указаны страницы для показа.
+                  </div>
+                </div>
+
+                <div v-else>
+                  <iframe
+                    v-if="pdfPreviewUrl"
+                    :src="pdfPreviewUrl"
+                    :title="`PDF-фрагмент произведения ${work.title || work.id}`"
+                    class="h-[72vh] min-h-[42rem] w-full border-0 bg-slate-100"
+                  />
+                  <iframe
+                    v-else-if="firstCorrectedPdfPage"
+                    :src="pdfPageUrl(firstCorrectedPdfPage)"
+                    :title="`Страница ${firstCorrectedPdfPage}`"
+                    class="h-[72vh] min-h-[42rem] w-full border-0 bg-slate-100"
+                  />
+                </div>
+              </template>
+
+              <textarea
+                v-else
+                readonly
+                :value="work.raw_xml || ''"
+                class="min-h-[36rem] w-full resize-y border-0 bg-white p-5 font-mono text-sm leading-6 text-slate-900 outline-none"
+              />
+            </div>
+          </div>
         </section>
       </template>
     </div>

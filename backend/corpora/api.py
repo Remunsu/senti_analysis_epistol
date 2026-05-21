@@ -1,4 +1,5 @@
 import csv
+from io import BytesIO
 import re
 import shutil
 import subprocess
@@ -37,9 +38,10 @@ from .serializers import (
     WorkDetailSerializer,
     format_work_date,
     format_work_date_values,
+    get_pdf_kind,
 )
 from .services.sentiment_analyzer import get_model_display_name
-from .services.djvu_outline import add_djvu_outline_to_pdf
+from .services.djvu_outline import add_djvu_outline_to_pdf, extract_pdf_extra_pages
 from .services.text_segments import (
     DEFAULT_MAX_SEGMENT_SIZE,
     DEFAULT_MIN_SEGMENT_SIZE,
@@ -181,7 +183,8 @@ class VolumeViewSet(EditableModelViewSet, mixins.DestroyModelMixin):
         if volume.facsimile_file:
             volume.facsimile_file.delete(save=False)
             volume.facsimile_file = ""
-            volume.save(update_fields=["facsimile_file"])
+            volume.pdf_extra_pages = ""
+            volume.save(update_fields=["facsimile_file", "pdf_extra_pages"])
 
         return Response(VolumeSerializer(volume, context={"request": request}).data)
 
@@ -206,6 +209,20 @@ class VolumeViewSet(EditableModelViewSet, mixins.DestroyModelMixin):
             content_type=content_type,
         )
 
+    @action(detail=True, methods=["post"], url_path="pdf-markers")
+    def refresh_pdf_markers(self, request, pk=None):
+        volume = self.get_object()
+
+        if not volume.facsimile_file:
+            return Response(
+                {"detail": "Для тома не загружен PDF"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        update_volume_pdf_extra_pages(volume)
+
+        return Response(VolumeSerializer(volume, context={"request": request}).data)
+
 
 def get_pdf_content_type(file_name):
     extension = Path(file_name).suffix.lower()
@@ -217,6 +234,107 @@ def get_pdf_content_type(file_name):
         return "image/vnd.djvu"
 
     return "application/octet-stream"
+
+
+def parse_page_numbers(value, limit=200):
+    pages = []
+    seen = set()
+
+    for part in re.split(r"[,\s;]+", str(value or "").strip()):
+        if not part:
+            continue
+
+        range_match = re.match(r"^(\d+)[-–—](\d+)$", part)
+
+        if range_match:
+            start = int(range_match.group(1))
+            end = int(range_match.group(2))
+            lower = min(start, end)
+            upper = max(start, end)
+
+            for page in range(lower, upper + 1):
+                if len(pages) >= limit:
+                    return pages
+                add_page_number(page, pages, seen)
+
+            continue
+
+        if part.isdigit():
+            add_page_number(int(part), pages, seen)
+
+        if len(pages) >= limit:
+            return pages
+
+    return pages
+
+
+def add_page_number(page, pages, seen):
+    if page < 1 or page in seen:
+        return
+
+    seen.add(page)
+    pages.append(page)
+
+
+def get_corrected_pdf_page(page, volume):
+    offset = int(volume.pdf_page_offset or 0)
+    extra_pages = parse_page_numbers(volume.pdf_extra_pages)
+    corrected_page = max(1, page + offset)
+    previous_page = 0
+    attempts = 0
+
+    while corrected_page != previous_page and attempts < len(extra_pages) + 2:
+        previous_page = corrected_page
+        corrected_page = max(
+            1,
+            page + offset + sum(1 for extra_page in extra_pages if extra_page <= previous_page),
+        )
+        attempts += 1
+
+    return corrected_page
+
+
+def build_work_pdf_fragment(work):
+    if not work.volume.facsimile_file or get_pdf_kind(work.volume) != "pdf":
+        return None, "Для произведения не загружен PDF тома"
+
+    logical_pages = parse_page_numbers(work.pages)
+
+    if not logical_pages:
+        return None, "У произведения не указаны страницы"
+
+    corrected_pages = [
+        get_corrected_pdf_page(page, work.volume)
+        for page in logical_pages
+    ]
+
+    try:
+        with work.volume.facsimile_file.open("rb") as source_file:
+            from pypdf import PdfReader, PdfWriter
+
+            reader = PdfReader(source_file)
+            writer = PdfWriter()
+            pages_count = len(reader.pages)
+
+            if pages_count < 1:
+                return None, "PDF тома пустой"
+
+            for page_number in sorted(set(corrected_pages)):
+                if page_number < 1 or page_number > pages_count:
+                    continue
+
+                writer.add_page(reader.pages[page_number - 1])
+
+            if len(writer.pages) < 1:
+                return None, "Страницы произведения не найдены в PDF"
+
+            output = BytesIO()
+            writer.write(output)
+            output.seek(0)
+
+            return output, ""
+    except Exception as exc:
+        return None, str(exc) or "Не удалось собрать фрагмент PDF"
 
 
 def delete_volume_and_files(volume):
@@ -243,9 +361,25 @@ def save_volume_pdf(volume, source_file, extension):
 
         volume.facsimile_file = source_file
         volume.save(update_fields=["facsimile_file"])
+        update_volume_pdf_extra_pages(volume)
         return
 
     save_converted_djvu(volume, source_file)
+
+
+def update_volume_pdf_extra_pages(volume):
+    if not volume.facsimile_file:
+        volume.pdf_extra_pages = ""
+        volume.save(update_fields=["pdf_extra_pages"])
+        return
+
+    try:
+        pdf_extra_pages = extract_pdf_extra_pages(Path(volume.facsimile_file.path))
+    except Exception:
+        pdf_extra_pages = ""
+
+    volume.pdf_extra_pages = pdf_extra_pages
+    volume.save(update_fields=["pdf_extra_pages"])
 
 
 def save_converted_djvu(volume, source_file):
@@ -289,13 +423,19 @@ def save_converted_djvu(volume, source_file):
         except Exception:
             pass
 
+        try:
+            pdf_extra_pages = extract_pdf_extra_pages(output_path)
+        except Exception:
+            pdf_extra_pages = ""
+
         with output_path.open("rb") as converted_pdf:
             if volume.facsimile_file:
                 volume.facsimile_file.delete(save=False)
 
             volume.facsimile_file.save(pdf_name, File(converted_pdf), save=False)
 
-    volume.save(update_fields=["facsimile_file"])
+    volume.pdf_extra_pages = pdf_extra_pages
+    volume.save(update_fields=["facsimile_file", "pdf_extra_pages"])
 
 
 class XMLUploadView(APIView):
@@ -1177,6 +1317,25 @@ class WorkViewSet(WorkFilterMixin, EditableModelViewSet):
         if self.action == "list":
             return WorkListSerializer
         return WorkDetailSerializer
+
+    @method_decorator(xframe_options_exempt)
+    @action(detail=True, methods=["get"], url_path="pdf-fragment")
+    def pdf_fragment(self, request, pk=None):
+        work = self.get_object()
+        pdf_fragment, error_message = build_work_pdf_fragment(work)
+
+        if not pdf_fragment:
+            return Response(
+                {"detail": error_message},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        return FileResponse(
+            pdf_fragment,
+            as_attachment=False,
+            filename=f"work-{work.id}-pages.pdf",
+            content_type="application/pdf",
+        )
     
     @action(detail=False, methods=["get"])
     def filters(self, request):

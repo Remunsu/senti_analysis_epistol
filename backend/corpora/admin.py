@@ -5,8 +5,19 @@ from .services.tei_parser import parse_volume
 
 @admin.register(Volume)
 class VolumeAdmin(admin.ModelAdmin):
-    list_display = ("id", "number", "title", "author", "pdf_file", "uploaded_at")
+    list_display = ("id", "number", "title", "author", "pdf_file", "pdf_page_offset", "uploaded_at")
     search_fields = ("title", "author")
+    fields = (
+        "source_id",
+        "number",
+        "author",
+        "title_short",
+        "title",
+        "xml_file",
+        "facsimile_file",
+        "pdf_page_offset",
+        "pdf_extra_pages",
+    )
 
     @admin.display(description="PDF")
     def pdf_file(self, obj):

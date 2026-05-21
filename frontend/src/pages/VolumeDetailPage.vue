@@ -47,6 +47,8 @@ const properties = computed(() => {
     ["Краткое название", volume.value.title_short],
     ["Автор", volume.value.author],
     ["PDF", volume.value.pdf_name],
+    ["Сдвиг страниц PDF", volume.value.pdf_page_offset ? volume.value.pdf_page_offset : ""],
+    ["Вклейки PDF", volume.value.pdf_extra_pages],
     ["Загружен", formatDateTime(volume.value.uploaded_at)],
   ].filter(([, value]) => hasPropertyValue(value))
 })
@@ -57,6 +59,8 @@ const volumeFields = [
   { key: "title", label: "Название" },
   { key: "title_short", label: "Краткое название" },
   { key: "author", label: "Автор" },
+  { key: "pdf_page_offset", label: "Сдвиг страниц PDF", type: "number" },
+  { key: "pdf_extra_pages", label: "Вклейки PDF" },
 ]
 
 function createEmptyVolumeForm() {
@@ -66,6 +70,8 @@ function createEmptyVolumeForm() {
     title: "",
     title_short: "",
     author: "",
+    pdf_page_offset: 0,
+    pdf_extra_pages: "",
   }
 }
 
@@ -113,6 +119,8 @@ function fillVolumeForm() {
     title: volume.value.title || "",
     title_short: volume.value.title_short || "",
     author: volume.value.author || "",
+    pdf_page_offset: volume.value.pdf_page_offset ?? 0,
+    pdf_extra_pages: volume.value.pdf_extra_pages || "",
   }
 }
 
@@ -132,6 +140,7 @@ function buildVolumePayload() {
   return {
     ...volumeForm.value,
     number: volumeForm.value.number === "" ? null : Number(volumeForm.value.number),
+    pdf_page_offset: volumeForm.value.pdf_page_offset === "" ? 0 : Number(volumeForm.value.pdf_page_offset),
   }
 }
 
