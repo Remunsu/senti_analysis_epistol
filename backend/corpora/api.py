@@ -39,6 +39,7 @@ from .serializers import (
     format_work_date_values,
 )
 from .services.sentiment_analyzer import get_model_display_name
+from .services.djvu_outline import add_djvu_outline_to_pdf
 from .services.text_segments import (
     DEFAULT_MAX_SEGMENT_SIZE,
     DEFAULT_MIN_SEGMENT_SIZE,
@@ -139,7 +140,13 @@ class VolumeViewSet(EditableModelViewSet, mixins.DestroyModelMixin):
     def perform_destroy(self, instance):
         delete_volume_and_files(instance)
 
-    @action(detail=True, methods=["post"], url_path="pdf")
+    @action(detail=True, methods=["post", "delete"], url_path="pdf")
+    def pdf(self, request, pk=None):
+        if request.method == "DELETE":
+            return self.delete_pdf(request, pk)
+
+        return self.upload_pdf(request, pk)
+
     def upload_pdf(self, request, pk=None):
         volume = self.get_object()
         source_file = request.FILES.get("file")
@@ -165,6 +172,16 @@ class VolumeViewSet(EditableModelViewSet, mixins.DestroyModelMixin):
                 {"detail": str(exc)},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+
+        return Response(VolumeSerializer(volume, context={"request": request}).data)
+
+    def delete_pdf(self, request, pk=None):
+        volume = self.get_object()
+
+        if volume.facsimile_file:
+            volume.facsimile_file.delete(save=False)
+            volume.facsimile_file = ""
+            volume.save(update_fields=["facsimile_file"])
 
         return Response(VolumeSerializer(volume, context={"request": request}).data)
 
@@ -266,6 +283,11 @@ def save_converted_djvu(volume, source_file):
                 message = f"{message}: {error_text}"
 
             raise DjvuConversionError(message) from exc
+
+        try:
+            add_djvu_outline_to_pdf(input_path, output_path)
+        except Exception:
+            pass
 
         with output_path.open("rb") as converted_pdf:
             if volume.facsimile_file:

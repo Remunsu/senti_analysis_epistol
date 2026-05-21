@@ -304,9 +304,9 @@ onMounted(() => {
           </h1>
         </div>
 
-        <div v-if="work" class="flex flex-wrap gap-3">
+        <div v-if="work && isAuthenticated" class="flex flex-wrap gap-3">
           <button
-            v-if="!isEditing && isAuthenticated"
+            v-if="!isEditing"
             type="button"
             @click="startEditing"
             class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"

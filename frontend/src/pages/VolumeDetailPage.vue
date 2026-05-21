@@ -13,6 +13,7 @@ const works = ref([])
 const loading = ref(false)
 const worksLoading = ref(false)
 const pdfUploading = ref(false)
+const pdfDeleting = ref(false)
 const saving = ref(false)
 const deleting = ref(false)
 const isEditing = ref(false)
@@ -273,6 +274,32 @@ async function uploadPdf(event) {
   }
 }
 
+async function deletePdf() {
+  if (!volume.value?.pdf_url || pdfDeleting.value) return
+  if (!window.confirm("Удалить PDF этого тома?")) return
+
+  pdfDeleting.value = true
+  error.value = ""
+
+  try {
+    const response = await authFetch(`${API_BASE_URL}/volumes/${volumeId.value}/pdf/`, {
+      method: "DELETE",
+    })
+    const data = await readApiResponse(response, "Не удалось удалить PDF")
+
+    if (!response.ok) {
+      throw new Error(data.detail || "Не удалось удалить PDF")
+    }
+
+    volume.value = data
+    fillVolumeForm()
+  } catch (err) {
+    error.value = err.message || "Неизвестная ошибка"
+  } finally {
+    pdfDeleting.value = false
+  }
+}
+
 function isAllowedPdfSourceFile(file) {
   const name = file.name.toLowerCase()
 
@@ -323,9 +350,9 @@ onMounted(() => {
           {{ volume?.title || "Том" }}
         </h1>
 
-        <div v-if="volume" class="flex flex-wrap gap-3">
+        <div v-if="volume && isAuthenticated" class="flex flex-wrap gap-3">
           <button
-            v-if="!isEditing && isAuthenticated"
+            v-if="!isEditing"
             type="button"
             @click="startEditing"
             class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
@@ -354,7 +381,6 @@ onMounted(() => {
           </template>
 
           <button
-            v-if="isAuthenticated"
             type="button"
             @click="deleteVolume"
             :disabled="deleting || saving"
@@ -403,6 +429,16 @@ onMounted(() => {
                 class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {{ pdfUploading ? "Загружаю..." : "Загрузить PDF" }}
+              </button>
+
+              <button
+                v-if="isAuthenticated && volume.pdf_url"
+                type="button"
+                @click="deletePdf"
+                :disabled="pdfDeleting || pdfUploading"
+                class="rounded-xl border border-red-200 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {{ pdfDeleting ? "Удаляю..." : "Удалить PDF" }}
               </button>
 
               <input

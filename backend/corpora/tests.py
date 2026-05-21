@@ -20,6 +20,7 @@ from .services.recipient_extractor import (
     resolve_recipient_model_path,
     select_recipient_candidate,
 )
+from .services.djvu_outline import parse_djvu_outline, parse_outline_page_number
 from .services.tei_parser import extract_work_data, format_pages
 from .services.text_segments import split_text_into_word_segments
 from .tasks import build_work_snapshot, split_work_text
@@ -128,6 +129,45 @@ class TeiParserTests(SimpleTestCase):
 
     def test_format_pages_compacts_numeric_values(self):
         self.assertEqual(format_pages(["10", "7", "8", "10"]), "7-10")
+
+
+class DjvuOutlineTests(SimpleTestCase):
+    def test_parse_outline_page_number_supports_common_destinations(self):
+        self.assertEqual(parse_outline_page_number("#page-1"), 0)
+        self.assertEqual(parse_outline_page_number("#12"), 11)
+        self.assertEqual(parse_outline_page_number("volume.djvu#page=7"), 6)
+
+    def test_parse_djvu_outline_reads_nested_bookmarks(self):
+        outline = parse_djvu_outline(
+            """
+            (bookmarks
+              ("Глава 1" "#page-1"
+                ("Раздел 1" "#page-2"))
+              ("Глава 2" "#page-10"))
+            """
+        )
+
+        self.assertEqual(
+            outline,
+            [
+                {
+                    "title": "Глава 1",
+                    "page_number": 0,
+                    "children": [
+                        {
+                            "title": "Раздел 1",
+                            "page_number": 1,
+                            "children": [],
+                        },
+                    ],
+                },
+                {
+                    "title": "Глава 2",
+                    "page_number": 9,
+                    "children": [],
+                },
+            ],
+        )
 
 
 class AnalysisSnapshotTests(SimpleTestCase):

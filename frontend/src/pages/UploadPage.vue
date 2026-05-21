@@ -97,9 +97,6 @@ onMounted(() => {
 
         <template v-else>
           <div class="mb-5">
-            <label class="mb-2 block text-sm font-semibold text-slate-900">
-              XML-файлы томов
-            </label>
             <input
               type="file"
               multiple

@@ -86,7 +86,7 @@ onMounted(() => {
           Войти
         </RouterLink>
 
-        <span v-if="isAuthenticated" class="ml-2 text-slate-500">
+        <span v-if="isAuthenticated" class="ml-2 text-slate-400">
           {{ currentUser?.username }}
         </span>
       </nav>
