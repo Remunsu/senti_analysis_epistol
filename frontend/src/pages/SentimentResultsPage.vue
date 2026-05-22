@@ -9,12 +9,6 @@ const route = useRoute()
 
 const run = ref(null)
 const summary = ref([])
-const totals = ref({
-  total: 0,
-  negative: 0,
-  neutral: 0,
-  positive: 0,
-})
 const loading = ref(false)
 const error = ref("")
 const expandedWorkIds = ref(new Set())
@@ -115,6 +109,28 @@ const echartsOption = computed(() => {
   if (!renderedChart.value.visible || chartItems.value.length === 0) return null
 
   return buildDistributionChartOption()
+})
+const workTotals = computed(() => {
+  const totalsByWork = {
+    total: summary.value.length,
+    negative: 0,
+    neutral: 0,
+    positive: 0,
+  }
+
+  summary.value.forEach((item) => {
+    const polarity = getWorkPolarity(item)
+
+    if (polarity === "-1") {
+      totalsByWork.negative += 1
+    } else if (polarity === "1") {
+      totalsByWork.positive += 1
+    } else {
+      totalsByWork.neutral += 1
+    }
+  })
+
+  return totalsByWork
 })
 
 const sentimentLabels = {
@@ -495,12 +511,6 @@ async function fetchResults({ silent = false } = {}) {
     if (selectedWorkIds.value.size === 0 && summary.value.length) {
       selectedWorkIds.value = new Set(summary.value.map((item) => item.original_work_id))
     }
-    totals.value = data.totals || {
-      total: 0,
-      negative: 0,
-      neutral: 0,
-      positive: 0,
-    }
     scheduleResultsPolling()
   } catch (err) {
     error.value = err.message || "Неизвестная ошибка"
@@ -600,20 +610,20 @@ onUnmounted(() => {
       <template v-else-if="run">
         <section class="mb-6 grid gap-4 md:grid-cols-4">
           <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-            <p class="text-sm text-slate-500">Фрагментов</p>
-            <p class="mt-2 text-3xl font-bold text-slate-900">{{ totals.total }}</p>
+            <p class="text-sm text-slate-500">Работ</p>
+            <p class="mt-2 text-3xl font-bold text-slate-900">{{ workTotals.total }}</p>
           </div>
           <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <p class="text-sm text-slate-500">Негативные</p>
-            <p class="mt-2 text-3xl font-bold text-red-700">{{ percent(totals.negative, totals.total) }}%</p>
+            <p class="mt-2 text-3xl font-bold text-red-700">{{ percent(workTotals.negative, workTotals.total) }}%</p>
           </div>
           <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <p class="text-sm text-slate-500">Нейтральные</p>
-            <p class="mt-2 text-3xl font-bold text-slate-700">{{ percent(totals.neutral, totals.total) }}%</p>
+            <p class="mt-2 text-3xl font-bold text-slate-700">{{ percent(workTotals.neutral, workTotals.total) }}%</p>
           </div>
           <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <p class="text-sm text-slate-500">Позитивные</p>
-            <p class="mt-2 text-3xl font-bold text-emerald-700">{{ percent(totals.positive, totals.total) }}%</p>
+            <p class="mt-2 text-3xl font-bold text-emerald-700">{{ percent(workTotals.positive, workTotals.total) }}%</p>
           </div>
         </section>
 

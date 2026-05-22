@@ -19,6 +19,7 @@ const user = ref<AuthUser | null>(null)
 const csrfToken = ref("")
 const loaded = ref(false)
 const loading = ref(false)
+let authStatusPromise: Promise<AuthUser | null> | null = null
 
 export const currentUser = user
 export const authLoaded = loaded
@@ -27,8 +28,14 @@ export const isAuthenticated = computed(() => Boolean(user.value))
 
 export async function fetchAuthStatus(force = false) {
   if (loaded.value && !force) return user.value
-  if (loading.value) return user.value
+  if (authStatusPromise && !force) return authStatusPromise
 
+  authStatusPromise = loadAuthStatus()
+
+  return authStatusPromise
+}
+
+async function loadAuthStatus() {
   loading.value = true
 
   try {
@@ -38,12 +45,13 @@ export async function fetchAuthStatus(force = false) {
     const data = await readApiResponse(response, "Не удалось проверить вход") as AuthPayload
 
     applyAuthPayload(data)
+
+    return user.value
   } finally {
     loaded.value = true
     loading.value = false
+    authStatusPromise = null
   }
-
-  return user.value
 }
 
 export async function login(username: string, password: string) {
