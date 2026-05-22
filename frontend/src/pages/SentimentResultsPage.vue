@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from "vue"
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue"
+import * as echarts from "echarts"
 import { RouterLink, useRoute } from "vue-router"
 import { API_BASE_URL, readApiResponse } from "../api"
 import { authFetch, fetchAuthStatus, isAuthenticated } from "../auth"
@@ -14,23 +15,107 @@ const totals = ref({
   neutral: 0,
   positive: 0,
 })
-const charts = ref({
-  years: [],
-  places: [],
-})
 const loading = ref(false)
 const error = ref("")
 const expandedWorkIds = ref(new Set())
 const fragmentsByWorkId = ref({})
 const fragmentLoadingByWorkId = ref({})
 const fragmentErrorsByWorkId = ref({})
+const selectedWorkIds = ref(new Set())
+const chartFilters = ref([])
+const selectedXAxis = ref("year")
+const selectedMetric = ref("distribution")
+const selectedChartType = ref("stacked_bar")
+const renderedChart = ref({
+  xAxis: "year",
+  metric: "distribution",
+  type: "stacked_bar",
+  visible: false,
+})
+const chartContainer = ref(null)
 let pollTimer = null
+let chartInstance = null
 
 const runId = computed(() => route.params.runId)
 
-const yearGroups = computed(() => charts.value.years || [])
-const placeGroups = computed(() => (charts.value.places || []).slice(0, 12))
-const hasChartData = computed(() => yearGroups.value.length || placeGroups.value.length)
+const filterableFields = [
+  { key: "year", label: "Год" },
+  { key: "date", label: "Дата" },
+  { key: "recipient", label: "Адресат" },
+  { key: "place", label: "Место" },
+  { key: "genre", label: "Жанр" },
+  { key: "author", label: "Автор" },
+]
+const xAxisFields = [
+  ...filterableFields.filter((field) => field.key !== "date"),
+]
+const metricOptions = [
+  { key: "distribution", label: "Количество негативных, нейтральных и позитивных произведений" },
+]
+const chartTypeOptions = computed(() => {
+  return [
+    { key: "stacked_bar", label: "Составные столбики" },
+    { key: "grouped_bar", label: "Группированные столбики" },
+    { key: "line", label: "Линии" },
+  ]
+})
+const filteredSummary = computed(() => {
+  return summary.value.filter((item) => {
+    return chartFilters.value.every((filterRow) => {
+      if (!filterRow.field || !filterRow.value) return true
+
+      return getFieldValue(item, filterRow.field) === filterRow.value
+    })
+  })
+})
+const selectedFilteredSummary = computed(() => {
+  return filteredSummary.value.filter((item) => selectedWorkIds.value.has(item.original_work_id))
+})
+const selectedFilteredWorksCount = computed(() => selectedFilteredSummary.value.length)
+const allFilteredSelected = computed(() => {
+  return filteredSummary.value.length > 0
+    && filteredSummary.value.every((item) => selectedWorkIds.value.has(item.original_work_id))
+})
+const renderedXAxisLabel = computed(() => fieldLabel(renderedChart.value.xAxis))
+const renderedMetricLabel = computed(() => {
+  return metricOptions.find((option) => option.key === renderedChart.value.metric)?.label || ""
+})
+const renderedChartTypeLabel = computed(() => {
+  return chartTypeOptions.value.find((option) => option.key === renderedChart.value.type)?.label || ""
+})
+const chartItems = computed(() => {
+  if (!renderedChart.value.visible) return []
+
+  return selectedFilteredSummary.value
+})
+const distributionChartGroups = computed(() => {
+  const groups = {}
+
+  chartItems.value.forEach((item) => {
+    const label = getFieldDisplayValue(item, renderedChart.value.xAxis)
+    const polarity = getWorkPolarity(item)
+    const group = groups[label] || {
+      label,
+      works_count: 0,
+      negative_count: 0,
+      neutral_count: 0,
+      positive_count: 0,
+    }
+
+    group.works_count += 1
+    group.negative_count += polarity === "-1" ? 1 : 0
+    group.neutral_count += polarity === "0" ? 1 : 0
+    group.positive_count += polarity === "1" ? 1 : 0
+    groups[label] = group
+  })
+
+  return Object.values(groups).sort(compareChartLabels)
+})
+const echartsOption = computed(() => {
+  if (!renderedChart.value.visible || chartItems.value.length === 0) return null
+
+  return buildDistributionChartOption()
+})
 
 const sentimentLabels = {
   "-1": {
@@ -57,17 +142,239 @@ function scoreLabel(score) {
   return Number(score || 0).toFixed(2)
 }
 
-function shareStyle(value, total) {
-  return {
-    width: `${percent(value, total)}%`,
-  }
-}
-
 function scoreClass(score) {
   if (score < -0.15) return "text-red-700"
   if (score > 0.15) return "text-emerald-700"
 
   return "text-slate-700"
+}
+
+function getWorkPolarity(item) {
+  const score = Number(item?.mean_score || 0)
+
+  if (score < -0.15) return "-1"
+  if (score > 0.15) return "1"
+
+  return "0"
+}
+
+function fieldLabel(field) {
+  return xAxisFields.find((option) => option.key === field)?.label || field
+}
+
+function getFieldValue(item, field) {
+  const value = item?.[field]
+
+  if (value === null || value === undefined || String(value).trim() === "") {
+    return ""
+  }
+
+  return String(value).trim()
+}
+
+function getFieldDisplayValue(item, field) {
+  return getFieldValue(item, field) || "Без значения"
+}
+
+function filterValueOptions(field) {
+  if (!field) return []
+
+  return [...new Set(summary.value.map((item) => getFieldValue(item, field)).filter(Boolean))]
+    .sort(compareLabels)
+}
+
+function addChartFilter() {
+  chartFilters.value = [
+    ...chartFilters.value,
+    { id: Date.now() + Math.random(), field: "year", value: "" },
+  ]
+}
+
+function removeChartFilter(filterId) {
+  chartFilters.value = chartFilters.value.filter((filterRow) => filterRow.id !== filterId)
+}
+
+function updateChartFilterField(filterRow, field) {
+  filterRow.field = field
+  filterRow.value = ""
+}
+
+function toggleWorkSelection(originalWorkId) {
+  const nextSelectedIds = new Set(selectedWorkIds.value)
+
+  if (nextSelectedIds.has(originalWorkId)) {
+    nextSelectedIds.delete(originalWorkId)
+  } else {
+    nextSelectedIds.add(originalWorkId)
+  }
+
+  selectedWorkIds.value = nextSelectedIds
+}
+
+function selectFilteredWorks() {
+  const nextSelectedIds = new Set(selectedWorkIds.value)
+
+  filteredSummary.value.forEach((item) => {
+    nextSelectedIds.add(item.original_work_id)
+  })
+
+  selectedWorkIds.value = nextSelectedIds
+}
+
+function deselectFilteredWorks() {
+  const nextSelectedIds = new Set(selectedWorkIds.value)
+
+  filteredSummary.value.forEach((item) => {
+    nextSelectedIds.delete(item.original_work_id)
+  })
+
+  selectedWorkIds.value = nextSelectedIds
+}
+
+function clearSelectedWorks() {
+  selectedWorkIds.value = new Set()
+}
+
+function generateChart() {
+  renderedChart.value = {
+    xAxis: selectedXAxis.value,
+    metric: selectedMetric.value,
+    type: selectedChartType.value,
+    visible: true,
+  }
+
+  nextTick(() => {
+    updateEcharts()
+  })
+}
+
+function compareLabels(first, second) {
+  const firstText = String(first || "")
+  const secondText = String(second || "")
+  const firstNumber = Number(firstText)
+  const secondNumber = Number(secondText)
+
+  if (Number.isFinite(firstNumber) && Number.isFinite(secondNumber)) {
+    return firstNumber - secondNumber
+  }
+
+  return firstText.localeCompare(secondText, "ru")
+}
+
+function compareChartLabels(first, second) {
+  return compareLabels(first.label, second.label)
+}
+
+function buildBaseChartOption() {
+  return {
+    color: ["#ef4444", "#94a3b8", "#10b981"],
+    tooltip: {
+      trigger: "axis",
+      axisPointer: {
+        type: "shadow",
+      },
+    },
+    legend: {
+      top: 0,
+    },
+    grid: {
+      left: 48,
+      right: 24,
+      top: 56,
+      bottom: distributionChartGroups.value.length > 8 ? 96 : 56,
+      containLabel: true,
+    },
+    dataZoom: distributionChartGroups.value.length > 12
+      ? [
+          {
+            type: "slider",
+            bottom: 24,
+            height: 22,
+            labelFormatter: () => "",
+          },
+          {
+            type: "inside",
+          },
+        ]
+      : [],
+  }
+}
+
+function buildDistributionChartOption() {
+  const labels = distributionChartGroups.value.map((group) => group.label)
+  const seriesType = renderedChart.value.type === "line" ? "line" : "bar"
+  const stack = renderedChart.value.type === "stacked_bar" ? "sentiment" : undefined
+
+  return {
+    ...buildBaseChartOption(),
+    tooltip: {
+      trigger: "axis",
+    },
+    xAxis: {
+      type: "category",
+      name: renderedXAxisLabel.value,
+      data: labels,
+      axisLabel: chartAxisLabelOptions(labels),
+    },
+    yAxis: {
+      type: "value",
+      name: "Произведения",
+      minInterval: 1,
+    },
+    series: [
+      {
+        name: "Негативные произведения",
+        type: seriesType,
+        stack,
+        smooth: seriesType === "line",
+        data: distributionChartGroups.value.map((group) => group.negative_count),
+      },
+      {
+        name: "Нейтральные произведения",
+        type: seriesType,
+        stack,
+        smooth: seriesType === "line",
+        data: distributionChartGroups.value.map((group) => group.neutral_count),
+      },
+      {
+        name: "Позитивные произведения",
+        type: seriesType,
+        stack,
+        smooth: seriesType === "line",
+        data: distributionChartGroups.value.map((group) => group.positive_count),
+      },
+    ],
+  }
+}
+
+function chartAxisLabelOptions(labels) {
+  return {
+    show: true,
+    interval: 0,
+    rotate: labels.length > 6 ? 35 : 0,
+    overflow: "truncate",
+    width: 120,
+  }
+}
+
+function updateEcharts() {
+  if (!chartContainer.value || !echartsOption.value) return
+
+  if (!chartInstance) {
+    chartInstance = echarts.init(chartContainer.value)
+  }
+
+  chartInstance.setOption(echartsOption.value, true)
+  chartInstance.resize()
+}
+
+function resizeEcharts() {
+  chartInstance?.resize()
+}
+
+function disposeEcharts() {
+  chartInstance?.dispose()
+  chartInstance = null
 }
 
 function segmentationLabel(runData) {
@@ -185,15 +492,14 @@ async function fetchResults({ silent = false } = {}) {
 
     run.value = data.run
     summary.value = data.summary
+    if (selectedWorkIds.value.size === 0 && summary.value.length) {
+      selectedWorkIds.value = new Set(summary.value.map((item) => item.original_work_id))
+    }
     totals.value = data.totals || {
       total: 0,
       negative: 0,
       neutral: 0,
       positive: 0,
-    }
-    charts.value = data.charts || {
-      years: [],
-      places: [],
     }
     scheduleResultsPolling()
   } catch (err) {
@@ -207,14 +513,39 @@ async function fetchResults({ silent = false } = {}) {
 watch(runId, () => {
   clearPollTimer()
   expandedWorkIds.value = new Set()
+  selectedWorkIds.value = new Set()
+  chartFilters.value = []
+  renderedChart.value = {
+    xAxis: selectedXAxis.value,
+    metric: selectedMetric.value,
+    type: selectedChartType.value,
+    visible: false,
+  }
+  disposeEcharts()
   fragmentsByWorkId.value = {}
   fragmentLoadingByWorkId.value = {}
   fragmentErrorsByWorkId.value = {}
   fetchResults()
 })
 
+watch(selectedMetric, () => {
+  selectedChartType.value = chartTypeOptions.value[0]?.key || "stacked_bar"
+})
+
+watch(echartsOption, () => {
+  if (!echartsOption.value) {
+    disposeEcharts()
+    return
+  }
+
+  nextTick(() => {
+    updateEcharts()
+  })
+})
+
 onMounted(async () => {
   await fetchAuthStatus()
+  window.addEventListener("resize", resizeEcharts)
 
   if (isAuthenticated.value) {
     fetchResults()
@@ -223,6 +554,8 @@ onMounted(async () => {
 
 onUnmounted(() => {
   clearPollTimer()
+  window.removeEventListener("resize", resizeEcharts)
+  disposeEcharts()
 })
 </script>
 
@@ -284,119 +617,168 @@ onUnmounted(() => {
           </div>
         </section>
 
-        <section
-          v-if="hasChartData"
-          class="mb-6 grid gap-6 xl:grid-cols-2"
-        >
-          <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-            <div class="border-b border-slate-200 px-5 py-4">
-              <h2 class="text-lg font-semibold text-slate-900">
-                По датам
-              </h2>
-            </div>
-
-            <div v-if="yearGroups.length" class="divide-y divide-slate-100">
-              <div
-                v-for="group in yearGroups"
-                :key="group.label"
-                class="px-5 py-4"
-              >
-                <div class="mb-2 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p class="font-medium text-slate-900">
-                      {{ group.label }}
-                    </p>
-                    <p class="text-sm text-slate-500">
-                      работ: {{ group.works_count }} · фрагментов: {{ group.segments_count }}
-                    </p>
-                  </div>
-
-                  <p class="text-sm font-semibold" :class="scoreClass(group.mean_score)">
-                    {{ scoreLabel(group.mean_score) }}
-                  </p>
-                </div>
-
-                <div class="flex h-3 overflow-hidden rounded-full bg-slate-100">
-                  <div
-                    class="bg-red-500"
-                    :style="shareStyle(group.negative_count, group.segments_count)"
-                  />
-                  <div
-                    class="bg-slate-400"
-                    :style="shareStyle(group.neutral_count, group.segments_count)"
-                  />
-                  <div
-                    class="bg-emerald-500"
-                    :style="shareStyle(group.positive_count, group.segments_count)"
-                  />
-                </div>
-
-                <div class="mt-2 flex justify-between text-xs text-slate-500">
-                  <span>Нег. {{ percent(group.negative_count, group.segments_count) }}%</span>
-                  <span>Нейтр. {{ percent(group.neutral_count, group.segments_count) }}%</span>
-                  <span>Поз. {{ percent(group.positive_count, group.segments_count) }}%</span>
-                </div>
+        <section class="mb-6 rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+          <div class="border-b border-slate-200 px-5 py-4">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 class="text-lg font-semibold text-slate-900">
+                  Конструктор графика
+                </h2>
+                <p class="mt-1 text-sm text-slate-600">
+                  Найдено: {{ filteredSummary.length }} · выбрано в найденных: {{ selectedFilteredWorksCount }}
+                </p>
               </div>
-            </div>
 
-            <div v-else class="p-5 text-slate-500">
-              Нет данных с годом написания.
+              <div class="flex flex-wrap gap-3">
+                <button
+                  type="button"
+                  @click="selectFilteredWorks"
+                  class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                >
+                  Выбрать найденные
+                </button>
+                <button
+                  type="button"
+                  @click="clearSelectedWorks"
+                  class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                >
+                  Снять выбор
+                </button>
+              </div>
             </div>
           </div>
 
-          <div class="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-            <div class="border-b border-slate-200 px-5 py-4">
-              <h2 class="text-lg font-semibold text-slate-900">
-                По месту написания
-              </h2>
+          <div class="space-y-5 p-5">
+            <div class="space-y-3">
+              <div
+                v-for="filterRow in chartFilters"
+                :key="filterRow.id"
+                class="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
+              >
+                <select
+                  :value="filterRow.field"
+                  class="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-slate-900 outline-none focus:border-slate-500"
+                  @change="updateChartFilterField(filterRow, $event.target.value)"
+                >
+                  <option
+                    v-for="field in filterableFields"
+                    :key="field.key"
+                    :value="field.key"
+                  >
+                    {{ field.label }}
+                  </option>
+                </select>
+
+                <select
+                  v-model="filterRow.value"
+                  class="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-slate-900 outline-none focus:border-slate-500"
+                >
+                  <option value="">Любое значение</option>
+                  <option
+                    v-for="value in filterValueOptions(filterRow.field)"
+                    :key="value"
+                    :value="value"
+                  >
+                    {{ value }}
+                  </option>
+                </select>
+
+                <button
+                  type="button"
+                  @click="removeChartFilter(filterRow.id)"
+                  class="rounded-xl border border-red-200 px-4 py-2 text-sm font-medium text-red-700 hover:bg-red-50"
+                >
+                  Удалить
+                </button>
+              </div>
+
+              <button
+                type="button"
+                @click="addChartFilter"
+                class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+              >
+                Добавить фильтр
+              </button>
             </div>
 
-            <div v-if="placeGroups.length" class="divide-y divide-slate-100">
-              <div
-                v-for="group in placeGroups"
-                :key="group.label"
-                class="px-5 py-4"
-              >
-                <div class="mb-2 flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p class="font-medium text-slate-900">
-                      {{ group.label }}
-                    </p>
-                    <p class="text-sm text-slate-500">
-                      работ: {{ group.works_count }} · фрагментов: {{ group.segments_count }}
-                    </p>
-                  </div>
+            <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1fr)_auto]">
+              <div>
+                <label class="mb-1 block text-sm font-medium text-slate-700">
+                  Ось X
+                </label>
+                <select
+                  v-model="selectedXAxis"
+                  class="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-slate-900 outline-none focus:border-slate-500"
+                >
+                  <option
+                    v-for="field in xAxisFields"
+                    :key="field.key"
+                    :value="field.key"
+                  >
+                    {{ field.label }}
+                  </option>
+                </select>
+              </div>
 
-                  <p class="text-sm font-semibold" :class="scoreClass(group.mean_score)">
-                    {{ scoreLabel(group.mean_score) }}
-                  </p>
+              <div>
+                <label class="mb-1 block text-sm font-medium text-slate-700">
+                  Ось Y
+                </label>
+                <div class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-slate-700">
+                  {{ metricOptions[0].label }}
                 </div>
+              </div>
 
-                <div class="flex h-3 overflow-hidden rounded-full bg-slate-100">
-                  <div
-                    class="bg-red-500"
-                    :style="shareStyle(group.negative_count, group.segments_count)"
-                  />
-                  <div
-                    class="bg-slate-400"
-                    :style="shareStyle(group.neutral_count, group.segments_count)"
-                  />
-                  <div
-                    class="bg-emerald-500"
-                    :style="shareStyle(group.positive_count, group.segments_count)"
-                  />
-                </div>
+              <div>
+                <label class="mb-1 block text-sm font-medium text-slate-700">
+                  Тип графика
+                </label>
+                <select
+                  v-model="selectedChartType"
+                  class="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-slate-900 outline-none focus:border-slate-500"
+                >
+                  <option
+                    v-for="typeOption in chartTypeOptions"
+                    :key="typeOption.key"
+                    :value="typeOption.key"
+                  >
+                    {{ typeOption.label }}
+                  </option>
+                </select>
+              </div>
 
-                <div class="mt-2 flex justify-between text-xs text-slate-500">
-                  <span>Нег. {{ percent(group.negative_count, group.segments_count) }}%</span>
-                  <span>Нейтр. {{ percent(group.neutral_count, group.segments_count) }}%</span>
-                  <span>Поз. {{ percent(group.positive_count, group.segments_count) }}%</span>
-                </div>
+              <div class="flex items-end">
+                <button
+                  type="button"
+                  @click="generateChart"
+                  :disabled="selectedFilteredWorksCount === 0"
+                  class="w-full rounded-xl bg-slate-900 px-5 py-2 font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  Построить
+                </button>
               </div>
             </div>
 
-            <div v-else class="p-5 text-slate-500">
-              Нет данных с местом написания.
+            <div
+              v-if="renderedChart.visible"
+              class="overflow-hidden rounded-xl border border-slate-200"
+            >
+              <div class="border-b border-slate-200 bg-slate-50 px-4 py-3">
+                <p class="font-semibold text-slate-900">
+                  X: {{ renderedXAxisLabel }} · Y: {{ renderedMetricLabel }} · {{ renderedChartTypeLabel }}
+                </p>
+              </div>
+
+              <div v-if="chartItems.length === 0" class="p-5 text-slate-500">
+                Для выбранных условий нет выбранных работ.
+              </div>
+
+              <div v-else class="p-5">
+                <div
+                  ref="chartContainer"
+                  class="h-[30rem] w-full"
+                ></div>
+              </div>
             </div>
           </div>
         </section>
@@ -412,6 +794,15 @@ onUnmounted(() => {
             <table class="w-full border-collapse text-left">
               <thead class="bg-slate-100 text-sm text-slate-700">
                 <tr>
+                  <th class="w-12 px-5 py-3 font-semibold">
+                    <input
+                      type="checkbox"
+                      :checked="allFilteredSelected"
+                      class="h-4 w-4 rounded border-slate-300"
+                      title="Выбрать найденные"
+                      @change="allFilteredSelected ? deselectFilteredWorks() : selectFilteredWorks()"
+                    />
+                  </th>
                   <th class="w-14 px-5 py-3 font-semibold"></th>
                   <th class="w-[36%] px-5 py-3 font-semibold">Письмо</th>
                   <th class="w-[12%] px-5 py-3 font-semibold">Среднее</th>
@@ -424,10 +815,19 @@ onUnmounted(() => {
 
               <tbody class="divide-y divide-slate-200">
                 <template
-                  v-for="item in summary"
+                  v-for="item in filteredSummary"
                   :key="item.original_work_id"
                 >
                   <tr class="hover:bg-slate-50">
+                    <td class="px-5 py-3 align-top">
+                      <input
+                        type="checkbox"
+                        :checked="selectedWorkIds.has(item.original_work_id)"
+                        class="mt-2 h-4 w-4 rounded border-slate-300"
+                        :title="selectedWorkIds.has(item.original_work_id) ? 'Убрать из графика' : 'Добавить в график'"
+                        @change="toggleWorkSelection(item.original_work_id)"
+                      />
+                    </td>
                     <td class="px-5 py-3 align-top">
                       <button
                         type="button"
@@ -465,7 +865,7 @@ onUnmounted(() => {
                   </tr>
 
                   <tr v-if="isWorkExpanded(item.original_work_id)" class="bg-slate-50/70">
-                    <td colspan="7" class="px-5 py-4">
+                    <td colspan="8" class="px-5 py-4">
                       <p
                         v-if="fragmentLoadingByWorkId[item.original_work_id]"
                         class="text-sm text-slate-500"
@@ -518,6 +918,12 @@ onUnmounted(() => {
                     </td>
                   </tr>
                 </template>
+
+                <tr v-if="filteredSummary.length === 0">
+                  <td colspan="8" class="px-5 py-8 text-center text-slate-500">
+                    По фильтрам конструктора ничего не найдено.
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>
