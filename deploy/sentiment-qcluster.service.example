@@ -1,0 +1,15 @@
+[Unit]
+Description=Sentiment Analysis Django Q cluster
+After=network.target postgresql.service sentiment-backend.service
+
+[Service]
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/sentiment-app/backend
+EnvironmentFile=/opt/sentiment-app/backend/.env
+ExecStart=/opt/sentiment-app/backend/venv/bin/python manage.py qcluster
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

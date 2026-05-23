@@ -69,3 +69,54 @@ python manage.py qcluster
 cd frontend
 npm run dev
 ```
+
+# Production draft
+The repository contains deploy templates in `deploy/`:
+- `nginx.example.conf`
+- `sentiment-backend.service.example`
+- `sentiment-qcluster.service.example`
+
+Backend production environment example:
+```
+cp backend/.env.production.example backend/.env
+```
+Then edit domain, database credentials, model paths and `SECRET_KEY`.
+Keep `SECURE_HSTS_SECONDS=0` until HTTPS is fully checked. After that it can be increased deliberately.
+
+Frontend production environment example:
+```
+cp frontend/.env.production.example frontend/.env.production
+```
+Then set:
+```
+VITE_API_BASE_URL=https://example.com/api
+```
+
+Build and prepare files:
+```
+cd backend
+source venv/bin/activate
+pip install -r requirements.txt
+python manage.py migrate
+python manage.py collectstatic
+
+cd ../frontend
+npm install
+npm run build
+```
+
+Run Django in production with Gunicorn, not `runserver`:
+```
+gunicorn config.wsgi:application --bind 127.0.0.1:8000 --workers 3 --timeout 300
+```
+
+Run Django Q as a separate process:
+```
+python manage.py qcluster
+```
+
+Nginx should serve:
+- `frontend/dist` for `/`
+- `backend/staticfiles` for `/static/`
+- `backend/media` for `/media/`
+- proxy `/api/` and `/admin/` to Gunicorn
