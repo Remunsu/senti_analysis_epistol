@@ -578,7 +578,7 @@ onUnmounted(() => {
             Результаты анализа
           </h1>
           <p v-if="run" class="mt-2 text-slate-600">
-            {{ run.model_name }} · {{ segmentationLabel(run) }} · работ: {{ run.works_count }}
+            {{ run.model_name }}
           </p>
           <p
             v-if="run?.status === 'failed'"
@@ -610,20 +610,20 @@ onUnmounted(() => {
       <template v-else-if="run">
         <section class="mb-6 grid gap-4 md:grid-cols-4">
           <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-            <p class="text-sm text-slate-500">Работ</p>
+            <p class="text-sm text-slate-500">Количество документов</p>
             <p class="mt-2 text-3xl font-bold text-slate-900">{{ workTotals.total }}</p>
           </div>
           <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <p class="text-sm text-slate-500">Негативные</p>
-            <p class="mt-2 text-3xl font-bold text-red-700">{{ percent(workTotals.negative, workTotals.total) }}%</p>
+            <p class="mt-2 text-3xl font-bold text-red-700">{{ workTotals.negative}}</p>
           </div>
           <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <p class="text-sm text-slate-500">Нейтральные</p>
-            <p class="mt-2 text-3xl font-bold text-slate-700">{{ percent(workTotals.neutral, workTotals.total) }}%</p>
+            <p class="mt-2 text-3xl font-bold text-slate-700">{{ workTotals.neutral }}</p>
           </div>
           <div class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
             <p class="text-sm text-slate-500">Позитивные</p>
-            <p class="mt-2 text-3xl font-bold text-emerald-700">{{ percent(workTotals.positive, workTotals.total) }}%</p>
+            <p class="mt-2 text-3xl font-bold text-emerald-700">{{ workTotals.positive }}</p>
           </div>
         </section>
 
@@ -796,7 +796,7 @@ onUnmounted(() => {
         <section class="mb-6 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
           <div class="border-b border-slate-200 px-5 py-4">
             <h2 class="text-lg font-semibold text-slate-900">
-              Итоги по письмам
+              Итоги
             </h2>
           </div>
 
@@ -814,7 +814,7 @@ onUnmounted(() => {
                     />
                   </th>
                   <th class="w-14 px-5 py-3 font-semibold"></th>
-                  <th class="w-[36%] px-5 py-3 font-semibold">Письмо</th>
+                  <th class="w-[36%] px-5 py-3 font-semibold">Название</th>
                   <th class="w-[12%] px-5 py-3 font-semibold">Среднее</th>
                   <th class="w-[12%] px-5 py-3 font-semibold">Нег.</th>
                   <th class="w-[12%] px-5 py-3 font-semibold">Нейтр.</th>
@@ -868,9 +868,9 @@ onUnmounted(() => {
                     <td class="px-5 py-3 font-semibold" :class="scoreClass(item.mean_score)">
                       {{ item.mean_score.toFixed(2) }}
                     </td>
-                    <td class="px-5 py-3 text-red-700">{{ percent(item.negative_count, item.segments_count) }}%</td>
-                    <td class="px-5 py-3 text-slate-700">{{ percent(item.neutral_count, item.segments_count) }}%</td>
-                    <td class="px-5 py-3 text-emerald-700">{{ percent(item.positive_count, item.segments_count) }}%</td>
+                    <td class="px-5 py-3 text-red-700">{{ item.negative_count }}</td>
+                    <td class="px-5 py-3 text-slate-700">{{ item.neutral_count }}</td>
+                    <td class="px-5 py-3 text-emerald-700">{{ item.positive_count }}</td>
                     <td class="px-5 py-3 text-slate-700">{{ item.segments_count }}</td>
                   </tr>
 

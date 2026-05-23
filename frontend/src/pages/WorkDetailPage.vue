@@ -288,16 +288,16 @@ async function saveWork() {
       },
       body: JSON.stringify(buildWorkPayload()),
     })
-    const data = await readApiResponse(response, "Не удалось сохранить произведение")
+    const data = await readApiResponse(response, "Не удалось сохранить документ")
 
     if (!response.ok) {
-      throw new Error(data.detail || "Не удалось сохранить произведение")
+      throw new Error(data.detail || "Не удалось сохранить документ")
     }
 
     work.value = data
     fillWorkForm()
     isEditing.value = false
-    success.value = "Произведение сохранено"
+    success.value = "Документ сохранен"
   } catch (err) {
     error.value = err.message || "Неизвестная ошибка"
   } finally {
@@ -315,7 +315,7 @@ async function fetchWork() {
     const response = await fetch(`${API_BASE_URL}/works/${workId.value}/`)
 
     if (!response.ok) {
-      throw new Error("Не удалось загрузить произведение")
+      throw new Error("Не удалось загрузить документ")
     }
 
     work.value = await response.json()
@@ -353,7 +353,7 @@ onBeforeUnmount(() => {
       <div class="mb-6 flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 class="mt-3 text-3xl font-bold text-slate-900">
-            {{ work?.title || "Произведение" }}
+            {{ work?.title || "Документ" }}
           </h1>
         </div>
 
@@ -399,7 +399,7 @@ onBeforeUnmount(() => {
       </div>
 
       <div v-if="loading" class="rounded-2xl bg-white p-5 text-slate-500 shadow-sm ring-1 ring-slate-200">
-        Загрузка произведения...
+        Загрузка документа...
       </div>
 
       <template v-else-if="work">
@@ -558,7 +558,7 @@ onBeforeUnmount(() => {
               <template v-if="selectedSource === 'pdf'">
                 <div v-if="pdfPages.length === 0" class="p-5">
                   <div class="rounded-xl bg-slate-50 p-4 text-sm text-slate-600">
-                    У произведения не указаны страницы для показа.
+                    У документа не указаны страницы для показа.
                   </div>
                 </div>
 
@@ -566,7 +566,7 @@ onBeforeUnmount(() => {
                   <iframe
                     v-if="pdfPreviewUrl"
                     :src="pdfPreviewUrl"
-                    :title="`PDF-фрагмент произведения ${work.title || work.id}`"
+                    :title="`PDF-фрагмент документа ${work.title || work.id}`"
                     class="h-[72vh] min-h-[42rem] w-full border-0 bg-slate-100"
                   />
                   <iframe

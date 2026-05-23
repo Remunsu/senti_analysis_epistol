@@ -164,7 +164,7 @@ onMounted(() => {
             :to="{ name: 'work-detail', params: { id: uploadedWorks[0].id } }"
             class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
           >
-            Открыть произведение
+            Открыть документ
           </RouterLink>
         </div>
 
@@ -173,7 +173,7 @@ onMounted(() => {
             Создано томов: {{ uploadedVolumes.length }}
           </p>
           <p class="text-sm text-slate-600">
-            Создано произведений: {{ uploadedWorks.length }}
+            Создано Документов: {{ uploadedWorks.length }}
           </p>
 
           <ul v-if="uploadedVolumes.length > 1" class="mt-3 divide-y divide-slate-200 rounded-xl border border-slate-200">

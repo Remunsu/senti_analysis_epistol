@@ -178,7 +178,7 @@ async function saveVolume() {
 
 async function deleteVolume() {
   if (!volume.value || deleting.value) return
-  if (!window.confirm("Удалить этот том и все его произведения?")) return
+  if (!window.confirm("Удалить этот том и все его содержимое?")) return
 
   deleting.value = true
   error.value = ""
@@ -215,7 +215,7 @@ async function fetchWorks(page = 1) {
     const response = await fetch(`${API_BASE_URL}/works/?${params.toString()}`)
 
     if (!response.ok) {
-      throw new Error("Не удалось загрузить произведения тома")
+      throw new Error("Не удалось загрузить документы тома")
     }
 
     const data = await response.json()
@@ -501,7 +501,7 @@ onMounted(() => {
           <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
             <div>
               <h2 class="text-lg font-semibold text-slate-900">
-                Произведения
+                Документы
               </h2>
               <p class="mt-1 text-sm text-slate-600">
                 Найдено: {{ totalCount }}
@@ -562,7 +562,7 @@ onMounted(() => {
 
                 <tr v-if="!worksLoading && works.length === 0">
                   <td colspan="5" class="px-5 py-8 text-center text-slate-500">
-                    Произведения не найдены
+                    Документы не найдены
                   </td>
                 </tr>
               </tbody>

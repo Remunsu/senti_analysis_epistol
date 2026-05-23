@@ -131,7 +131,7 @@ function formatWorkDate(work) {
 
         <tr v-if="!loading && works.length === 0">
           <td :colspan="selectable ? 6 : 5" class="px-5 py-8 text-center text-slate-500">
-            Произведения не найдены
+            Документы не найдены
           </td>
         </tr>
       </tbody>

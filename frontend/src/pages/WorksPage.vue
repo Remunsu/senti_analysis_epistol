@@ -269,7 +269,7 @@ async function fetchWorks(page = 1) {
     const response = await fetch(`${API_BASE_URL}/works/?${params.toString()}`)
 
     if (!response.ok) {
-      throw new Error("Не удалось загрузить произведения")
+      throw new Error("Не удалось загрузить документы")
     }
 
     const data = await response.json()
@@ -495,7 +495,7 @@ onMounted(async () => {
     <div class="mx-auto max-w-7xl">
       <div class="mb-6">
         <h1 class="text-3xl font-bold text-slate-900">
-          Произведения
+          Документы
         </h1>
       </div>
 
