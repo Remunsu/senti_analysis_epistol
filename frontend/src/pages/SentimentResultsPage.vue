@@ -44,7 +44,7 @@ const xAxisFields = [
   ...filterableFields.filter((field) => field.key !== "date"),
 ]
 const metricOptions = [
-  { key: "distribution", label: "Количество негативных, нейтральных и позитивных произведений" },
+  { key: "distribution", label: "Количество негативных, нейтральных и позитивных" },
 ]
 const chartTypeOptions = computed(() => {
   return [
