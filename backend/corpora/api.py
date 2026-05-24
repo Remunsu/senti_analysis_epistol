@@ -442,18 +442,11 @@ class XMLUploadView(APIView):
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser, FormParser]
     allowed_content_types = {"text/xml", "application/xml", "application/octet-stream", ""}
-    max_file_size = 100 * 1024 * 1024
+    max_file_size = 200 * 1024 * 1024
 
     def post(self, request):
         upload_mode = request.data.get("mode", "volume")
         xml_files = request.FILES.getlist("files") or request.FILES.getlist("file")
-
-        if upload_mode != "volume":
-            return Response(
-                {"detail": "Загрузка одного произведения отключена. Загружайте XML тома."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
         if not xml_files:
             return Response(
                 {"detail": "Загрузите один или несколько XML-файлов"},
