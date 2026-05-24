@@ -20,12 +20,6 @@ const chartFilters = ref([])
 const selectedXAxis = ref("year")
 const selectedMetric = ref("distribution")
 const selectedChartType = ref("stacked_bar")
-const renderedChart = ref({
-  xAxis: "year",
-  metric: "distribution",
-  type: "stacked_bar",
-  visible: false,
-})
 const chartContainer = ref(null)
 let pollTimer = null
 let chartInstance = null
@@ -70,6 +64,12 @@ const allFilteredSelected = computed(() => {
   return filteredSummary.value.length > 0
     && filteredSummary.value.every((item) => selectedWorkIds.value.has(item.original_work_id))
 })
+const renderedChart = computed(() => ({
+  xAxis: selectedXAxis.value,
+  metric: selectedMetric.value,
+  type: selectedChartType.value,
+  visible: selectedFilteredWorksCount.value > 0,
+}))
 const renderedXAxisLabel = computed(() => fieldLabel(renderedChart.value.xAxis))
 const renderedMetricLabel = computed(() => {
   return metricOptions.find((option) => option.key === renderedChart.value.metric)?.label || ""
@@ -249,19 +249,6 @@ function deselectFilteredWorks() {
 
 function clearSelectedWorks() {
   selectedWorkIds.value = new Set()
-}
-
-function generateChart() {
-  renderedChart.value = {
-    xAxis: selectedXAxis.value,
-    metric: selectedMetric.value,
-    type: selectedChartType.value,
-    visible: true,
-  }
-
-  nextTick(() => {
-    updateEcharts()
-  })
 }
 
 function compareLabels(first, second) {
@@ -525,12 +512,6 @@ watch(runId, () => {
   expandedWorkIds.value = new Set()
   selectedWorkIds.value = new Set()
   chartFilters.value = []
-  renderedChart.value = {
-    xAxis: selectedXAxis.value,
-    metric: selectedMetric.value,
-    type: selectedChartType.value,
-    visible: false,
-  }
   disposeEcharts()
   fragmentsByWorkId.value = {}
   fragmentLoadingByWorkId.value = {}
@@ -694,7 +675,7 @@ onUnmounted(() => {
               </button>
             </div>
 
-            <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1fr)_auto]">
+            <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)_minmax(0,1fr)]">
               <div>
                 <label class="mb-1 block text-sm font-medium text-slate-700">
                   Ось X
@@ -739,21 +720,9 @@ onUnmounted(() => {
                   </option>
                 </select>
               </div>
-
-              <div class="flex items-end">
-                <button
-                  type="button"
-                  @click="generateChart"
-                  :disabled="selectedFilteredWorksCount === 0"
-                  class="w-full rounded-xl bg-slate-900 px-5 py-2 font-medium text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:opacity-40"
-                >
-                  Построить
-                </button>
-              </div>
             </div>
 
             <div
-              v-if="renderedChart.visible"
               class="overflow-hidden rounded-xl border border-slate-200"
             >
               <div class="border-b border-slate-200 bg-slate-50 px-4 py-3">
@@ -762,7 +731,7 @@ onUnmounted(() => {
                 </p>
               </div>
 
-              <div v-if="chartItems.length === 0" class="p-5 text-slate-500">
+              <div v-if="selectedFilteredWorksCount === 0" class="p-5 text-slate-500">
                 Для выбранных условий нет выбранных работ.
               </div>
 
