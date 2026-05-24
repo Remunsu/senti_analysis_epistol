@@ -638,23 +638,6 @@ onUnmounted(() => {
                   Найдено: {{ filteredSummary.length }} · выбрано в найденных: {{ selectedFilteredWorksCount }}
                 </p>
               </div>
-
-              <div class="flex flex-wrap gap-3">
-                <button
-                  type="button"
-                  @click="selectFilteredWorks"
-                  class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
-                >
-                  Выбрать найденные
-                </button>
-                <button
-                  type="button"
-                  @click="clearSelectedWorks"
-                  class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
-                >
-                  Снять выбор
-                </button>
-              </div>
             </div>
           </div>
 
