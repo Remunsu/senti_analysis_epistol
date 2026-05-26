@@ -1,4 +1,3 @@
-import csv
 from io import BytesIO
 import re
 import shutil
@@ -9,9 +8,8 @@ from pathlib import Path
 from django.contrib.auth import authenticate, login, logout
 from django.middleware.csrf import get_token
 from django.core.files import File
-from django.db.models import Count, Max, Q
-from django.db import transaction
-from django.http import FileResponse, HttpResponse, QueryDict
+from django.db.models import Avg, Count, Max, Q, Sum
+from django.http import FileResponse, QueryDict
 from django.utils.text import get_valid_filename
 from django.utils.decorators import method_decorator
 from django.views.decorators.clickjacking import xframe_options_exempt
@@ -26,8 +24,6 @@ from rest_framework.decorators import action
 from .models import (
     SentimentAnalysisResult,
     SentimentAnalysisRun,
-    SentimentAnnotationSkip,
-    SentimentFragmentLabel,
     Volume,
     Work,
 )
@@ -36,7 +32,6 @@ from .serializers import (
     VolumeSerializer,
     WorkListSerializer,
     WorkDetailSerializer,
-    format_work_date,
     format_work_date_values,
     get_pdf_kind,
 )
@@ -45,7 +40,6 @@ from .services.djvu_outline import add_djvu_outline_to_pdf, extract_pdf_extra_pa
 from .services.text_segments import (
     DEFAULT_MAX_SEGMENT_SIZE,
     DEFAULT_MIN_SEGMENT_SIZE,
-    split_text_into_word_segments,
 )
 from .services.tei_parser import parse_volume
 
@@ -503,276 +497,6 @@ class XMLUploadView(APIView):
             xml_file.name.lower().endswith(".xml") and
             content_type in self.allowed_content_types
         )
-
-
-class SentimentAnnotationCriteriaMixin:
-    target_genre = "письмо"
-    target_languages = ("ru", "de ru", "la ru")
-    min_segment_size = DEFAULT_MIN_SEGMENT_SIZE
-    max_segment_size = DEFAULT_MAX_SEGMENT_SIZE
-
-    def get_annotation_queryset(self):
-        return (
-            Work.objects.select_related("volume")
-            .filter(genre=self.target_genre, language__in=self.target_languages)
-            .exclude(plain_text="")
-        )
-
-    def build_annotation_stats(self):
-        queryset = self.get_annotation_queryset()
-        total_count = queryset.count()
-        labeled_count = queryset.filter(sentiment_labels__isnull=False).distinct().count()
-        skipped_count = queryset.filter(sentiment_annotation_skip__isnull=False).count()
-        labeled_fragments_count = SentimentFragmentLabel.objects.filter(work__in=queryset).count()
-        remaining_fragments_count = self.count_remaining_annotation_fragments(queryset)
-
-        return {
-            "total_count": total_count,
-            "labeled_count": labeled_count,
-            "skipped_count": skipped_count,
-            "remaining_count": max(total_count - labeled_count - skipped_count, 0),
-            "labeled_fragments_count": labeled_fragments_count,
-            "remaining_fragments_count": remaining_fragments_count,
-        }
-
-    def count_remaining_annotation_fragments(self, queryset):
-        remaining_texts = (
-            queryset
-            .filter(sentiment_labels__isnull=True)
-            .filter(sentiment_annotation_skip__isnull=True)
-            .values_list("plain_text", flat=True)
-        )
-
-        return sum(
-            len(
-                split_text_into_word_segments(
-                    text,
-                    self.min_segment_size,
-                    self.max_segment_size,
-                )
-            )
-            for text in remaining_texts.iterator(chunk_size=500)
-        )
-
-    def build_annotation_criteria(self):
-        return {
-            "genre": self.target_genre,
-            "languages": list(self.target_languages),
-            "min_segment_size": self.min_segment_size,
-            "max_segment_size": self.max_segment_size,
-        }
-
-
-class SentimentAnnotationTaskView(SentimentAnnotationCriteriaMixin, APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        work = (
-            self.get_annotation_queryset()
-            .filter(sentiment_labels__isnull=True)
-            .filter(sentiment_annotation_skip__isnull=True)
-            .order_by("id")
-            .first()
-        )
-
-        payload = {
-            "criteria": self.build_annotation_criteria(),
-            **self.build_annotation_stats(),
-            "work": None,
-            "min_segment_size": self.min_segment_size,
-            "max_segment_size": self.max_segment_size,
-            "fragments": [],
-        }
-
-        if not work:
-            return Response({
-                **payload,
-                "detail": "Нет неразмеченных писем для выбранных условий",
-            })
-
-        return Response({
-            **payload,
-            "work": WorkDetailSerializer(work).data,
-            "fragments": self.build_fragments(work.plain_text),
-        })
-
-    @transaction.atomic
-    def post(self, request):
-        work_id = request.data.get("work_id")
-        fragments = request.data.get("fragments", [])
-
-        if not work_id:
-            return Response(
-                {"detail": "Не указан work_id"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        if not fragments:
-            return Response(
-                {"detail": "Нет фрагментов для сохранения"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        work = self.get_annotation_queryset().filter(id=work_id).first()
-
-        if not work:
-            return Response(
-                {"detail": "Письмо не найдено или не входит в набор для разметки"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        invalid_fragment = next(
-            (
-                fragment for fragment in fragments
-                if fragment.get("label") not in dict(SentimentFragmentLabel.LABEL_CHOICES)
-            ),
-            None,
-        )
-
-        if invalid_fragment:
-            return Response(
-                {"detail": "Укажите тональность для каждого фрагмента"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        SentimentFragmentLabel.objects.filter(work=work).delete()
-        SentimentAnnotationSkip.objects.filter(work=work).delete()
-
-        labels = [
-            SentimentFragmentLabel(
-                work=work,
-                segment_index=fragment["segment_index"],
-                word_start=fragment["word_start"],
-                word_end=fragment["word_end"],
-                text=fragment["text"],
-                label=fragment["label"],
-                comment="",
-            )
-            for fragment in fragments
-        ]
-
-        SentimentFragmentLabel.objects.bulk_create(labels)
-
-        return Response({
-            "work_id": work.id,
-            "saved": len(labels),
-            **self.build_annotation_stats(),
-        }, status=status.HTTP_201_CREATED)
-
-    def build_fragments(self, text: str):
-        return [
-            {
-                **fragment,
-                "label": "",
-            }
-            for fragment in split_text_into_word_segments(
-                text,
-                self.min_segment_size,
-                self.max_segment_size,
-            )
-        ]
-
-
-class SentimentAnnotationSkipView(SentimentAnnotationCriteriaMixin, APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        work_id = request.data.get("work_id")
-
-        if not work_id:
-            return Response(
-                {"detail": "Не указан work_id"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        work = self.get_annotation_queryset().filter(id=work_id).first()
-
-        if not work:
-            return Response(
-                {"detail": "Письмо не найдено или не входит в набор для разметки"},
-                status=status.HTTP_404_NOT_FOUND,
-            )
-
-        SentimentFragmentLabel.objects.filter(work=work).delete()
-        SentimentAnnotationSkip.objects.get_or_create(work=work)
-
-        return Response({
-            "work_id": work.id,
-            **self.build_annotation_stats(),
-        }, status=status.HTTP_201_CREATED)
-
-
-class SentimentAnnotationExportView(SentimentAnnotationCriteriaMixin, APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request):
-        response = HttpResponse(content_type="text/csv; charset=utf-8")
-        response["Content-Disposition"] = 'attachment; filename="sentiment_annotations.csv"'
-        response.write("\ufeff")
-
-        writer = csv.writer(response)
-        writer.writerow([
-            "work_id",
-            "source_id",
-            "volume_id",
-            "volume_number",
-            "volume_title",
-            "work_number",
-            "title",
-            "author",
-            "recipient",
-            "genre",
-            "language",
-            "date_from",
-            "date_to",
-            "date",
-            "place",
-            "pages",
-            "segment_index",
-            "word_start",
-            "word_end",
-            "label",
-            "text",
-            "created_at",
-        ])
-
-        labels = (
-            SentimentFragmentLabel.objects
-            .select_related("work", "work__volume")
-            .filter(work__in=self.get_annotation_queryset())
-            .order_by("work_id", "segment_index")
-        )
-
-        for label in labels.iterator(chunk_size=1000):
-            work = label.work
-            volume = work.volume
-
-            writer.writerow([
-                work.id,
-                work.source_id,
-                volume.id,
-                volume.number,
-                volume.title,
-                work.number,
-                work.title,
-                work.author,
-                work.recipient,
-                work.genre,
-                work.language,
-                work.date_from,
-                work.date_to,
-                format_work_date(work),
-                work.place,
-                work.pages,
-                label.segment_index,
-                label.word_start,
-                label.word_end,
-                label.label,
-                label.text,
-                label.created_at.isoformat(),
-            ])
-
-        return response
 
 
 class WorkFilterMixin:

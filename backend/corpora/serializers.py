@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import SentimentAnalysisRun, SentimentFragmentLabel, Volume, Work
+from .models import SentimentAnalysisRun, Volume, Work
 
 
 class VolumeSerializer(serializers.ModelSerializer):
@@ -153,12 +153,6 @@ def get_pdf_kind(volume):
         return "djvu"
 
     return ""
-
-
-class SentimentFragmentLabelSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = SentimentFragmentLabel
-        fields = "__all__"
 
 
 class SentimentAnalysisRunSerializer(serializers.ModelSerializer):

@@ -47,43 +47,6 @@ class Work(models.Model):
     def __str__(self):
         return self.title
     
-class SentimentFragmentLabel(models.Model):
-    LABEL_CHOICES = [
-        ("-1", "Негативная"),
-        ("0", "Нейтральная"),
-        ("1", "Позитивная"),
-    ]
-
-    work = models.ForeignKey(Work, on_delete=models.CASCADE, related_name="sentiment_labels")
-
-    segment_index = models.IntegerField()
-    word_start = models.IntegerField()
-    word_end = models.IntegerField()
-    text = models.TextField()
-
-    label = models.CharField(max_length=20, choices=LABEL_CHOICES)
-    comment = models.TextField(blank=True)
-
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        unique_together = ("work", "segment_index")
-        ordering = ["work", "segment_index"]
-
-
-class SentimentAnnotationSkip(models.Model):
-    work = models.OneToOneField(
-        Work,
-        on_delete=models.CASCADE,
-        related_name="sentiment_annotation_skip",
-    )
-
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["work"]
-
-
 class SentimentAnalysisRun(models.Model):
     MODEL_KIND_CHOICES = [
         ("rubert", "RuBERT"),
@@ -118,7 +81,11 @@ class SentimentAnalysisRun(models.Model):
 
 
 class SentimentAnalysisResult(models.Model):
-    LABEL_CHOICES = SentimentFragmentLabel.LABEL_CHOICES
+    LABEL_CHOICES = [
+        ("-1", "Негативная"),
+        ("0", "Нейтральная"),
+        ("1", "Позитивная"),
+    ]
 
     run = models.ForeignKey(SentimentAnalysisRun, on_delete=models.CASCADE, related_name="results")
     work = models.ForeignKey(

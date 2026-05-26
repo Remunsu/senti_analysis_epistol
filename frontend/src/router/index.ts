@@ -1,5 +1,4 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import AnnotationPage from '../pages/AnnotationPage.vue'
 import LoginPage from '../pages/LoginPage.vue'
 import NotFoundPage from '../pages/NotFoundPage.vue'
 import SentimentResultsPage from '../pages/SentimentResultsPage.vue'
@@ -42,11 +41,6 @@ const router = createRouter({
       path: '/login',
       name: 'login',
       component: LoginPage,
-    },
-    {
-      path: '/annotation',
-      name: 'annotation',
-      component: AnnotationPage,
     },
     {
       path: '/sentiment/results',
