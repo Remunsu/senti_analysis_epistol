@@ -420,16 +420,6 @@ onMounted(() => {
             </h2>
 
             <div class="flex flex-wrap items-center gap-3">
-              <a
-                v-if="volume.pdf_url"
-                :href="volume.pdf_url"
-                target="_blank"
-                rel="noreferrer"
-                class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
-              >
-                Открыть файл
-              </a>
-
               <button
                 v-if="isAuthenticated"
                 type="button"
@@ -491,7 +481,18 @@ onMounted(() => {
                 {{ label }}
               </dt>
               <dd class="mt-1 break-words text-sm text-slate-900">
-                {{ value || "—" }}
+                <a
+                  v-if="label === 'PDF' && volume.pdf_url"
+                  :href="volume.pdf_url"
+                  target="_blank"
+                  rel="noreferrer"
+                  class="font-medium text-slate-900 underline decoration-slate-300 underline-offset-4 hover:text-slate-600"
+                >
+                  {{ value }}
+                </a>
+                <template v-else>
+                  {{ value || "—" }}
+                </template>
               </dd>
             </div>
           </dl>
