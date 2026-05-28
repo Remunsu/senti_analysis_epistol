@@ -121,7 +121,7 @@ onMounted(() => {
                 <th class="w-[35%] px-5 py-3 font-semibold">Название</th>
                 <th class="w-[18%] px-5 py-3 font-semibold">Автор</th>
                 <th class="w-[15%] px-5 py-3 font-semibold">ID источника</th>
-                <th class="w-[12%] px-5 py-3 font-semibold">Работ</th>
+                <th class="w-[12%] px-5 py-3 font-semibold">Количество документов</th>
                 <th class="w-[15%] px-5 py-3 font-semibold">Загружен</th>
               </tr>
             </thead>
