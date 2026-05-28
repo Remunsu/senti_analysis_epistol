@@ -25,13 +25,16 @@ onMounted(() => {
 <template>
   <header class="border-b border-slate-200 bg-white">
     <div class="mx-auto flex min-h-14 max-w-7xl flex-wrap items-center justify-between gap-3 px-6 py-2">
-      <div class="text-base font-semibold text-slate-900">
+      <RouterLink
+        to="/"
+        class="text-base font-semibold text-slate-900 hover:text-slate-600"
+      >
         Sentiment Analysis
-      </div>
+      </RouterLink>
 
       <nav class="flex flex-wrap items-center gap-2 text-sm">
         <RouterLink
-          to="/"
+          to="/works"
           class="rounded-lg px-3 py-2 font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
           active-class="bg-slate-900 text-white hover:bg-slate-900 hover:text-white"
         >
