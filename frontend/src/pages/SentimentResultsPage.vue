@@ -21,6 +21,7 @@ const selectedXAxis = ref("year")
 const selectedMetric = ref("work_distribution")
 const selectedChartType = ref("stacked_bar")
 const chartContainer = ref(null)
+const focusedChartGroupLabel = ref("")
 let pollTimer = null
 let chartInstance = null
 
@@ -61,6 +62,13 @@ const filteredSummary = computed(() => {
 
       return filterRow.mode === "exclude" ? !matches : matches
     })
+  })
+})
+const visibleSummary = computed(() => {
+  if (!focusedChartGroupLabel.value) return filteredSummary.value
+
+  return filteredSummary.value.filter((item) => {
+    return getFieldDisplayValue(item, renderedChart.value.xAxis) === focusedChartGroupLabel.value
   })
 })
 const selectedFilteredSummary = computed(() => {
@@ -276,6 +284,14 @@ function clearSelectedWorks() {
   selectedWorkIds.value = new Set()
 }
 
+function focusChartGroup(groupLabel) {
+  focusedChartGroupLabel.value = String(groupLabel || "")
+}
+
+function clearChartGroupFocus() {
+  focusedChartGroupLabel.value = ""
+}
+
 function compareLabels(first, second) {
   const firstText = String(first || "")
   const secondText = String(second || "")
@@ -394,8 +410,16 @@ function updateEcharts() {
     chartInstance = echarts.init(chartContainer.value)
   }
 
+  chartInstance.off("click")
+  chartInstance.on("click", handleChartClick)
   chartInstance.setOption(echartsOption.value, true)
   chartInstance.resize()
+}
+
+function handleChartClick(event) {
+  if (!event?.name) return
+
+  focusChartGroup(event.name)
 }
 
 function resizeEcharts() {
@@ -549,6 +573,10 @@ watch(runId, () => {
 watch(selectedMetric, () => {
   selectedChartType.value = chartTypeOptions.value[0]?.key || "stacked_bar"
 })
+
+watch([selectedXAxis, chartFilters], () => {
+  clearChartGroupFocus()
+}, { deep: true })
 
 watch(echartsOption, () => {
   if (!echartsOption.value) {
@@ -787,7 +815,7 @@ onUnmounted(() => {
               <div v-else class="p-5">
                 <div
                   ref="chartContainer"
-                  class="h-[30rem] w-full"
+                  class="h-[30rem] w-full cursor-pointer"
                 ></div>
               </div>
             </div>
@@ -795,10 +823,24 @@ onUnmounted(() => {
         </section>
 
         <section class="mb-6 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-          <div class="border-b border-slate-200 px-5 py-4">
-            <h2 class="text-lg font-semibold text-slate-900">
-              Итоги
-            </h2>
+          <div class="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 px-5 py-4">
+            <div>
+              <h2 class="text-lg font-semibold text-slate-900">
+                Итоги
+              </h2>
+              <p v-if="focusedChartGroupLabel" class="mt-1 text-sm text-slate-600">
+                Показана группа: {{ focusedChartGroupLabel }} · документов: {{ visibleSummary.length }}
+              </p>
+            </div>
+
+            <button
+              v-if="focusedChartGroupLabel"
+              type="button"
+              @click="clearChartGroupFocus"
+              class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            >
+              Показать все
+            </button>
           </div>
 
           <div class="overflow-x-auto">
@@ -826,7 +868,7 @@ onUnmounted(() => {
 
               <tbody class="divide-y divide-slate-200">
                 <template
-                  v-for="item in filteredSummary"
+                  v-for="item in visibleSummary"
                   :key="item.original_work_id"
                 >
                   <tr class="hover:bg-slate-50">
@@ -930,7 +972,7 @@ onUnmounted(() => {
                   </tr>
                 </template>
 
-                <tr v-if="filteredSummary.length === 0">
+                <tr v-if="visibleSummary.length === 0">
                   <td colspan="8" class="px-5 py-8 text-center text-slate-500">
                     По фильтрам конструктора ничего не найдено.
                   </td>
