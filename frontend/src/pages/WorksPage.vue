@@ -61,6 +61,11 @@ const filterFieldOptions = filterFields.map((field) => ({
   value: field.key,
 }))
 
+const filterModeOptions = [
+  { key: "include", label: "=" },
+  { key: "exclude", label: "≠" },
+]
+
 const totalPages = computed(() => {
   if (!totalCount.value) return 1
   return Math.ceil(totalCount.value / pageSize)
@@ -155,6 +160,7 @@ function addFilterRow() {
   filterRows.value.push({
     id: nextFilterId,
     field: "",
+    mode: "include",
     value: "",
     from: "",
     to: "",
@@ -206,6 +212,7 @@ function restorePageState() {
     const restoredFilterRows = Array.isArray(state.filterRows)
       ? state.filterRows.map((row) => ({
         ...row,
+        mode: row.mode === "exclude" ? "exclude" : "include",
         field: row.field === "page_number" || row.field === "Страница" ? "number" : row.field,
       }))
       : []
@@ -312,18 +319,20 @@ function buildWorkParams(page = null) {
     if (isRangeFilter(row.field)) {
       const from = resolveFilterInput(row.field, row.from)
       const to = resolveFilterInput(row.field, row.to)
+      const suffix = row.mode === "exclude" ? "_exclude" : ""
 
       if (from || to) {
-        params.append(`${field.key}_range`, `${from}..${to}`)
+        params.append(`${field.key}_range${suffix}`, `${from}..${to}`)
       }
 
       return
     }
 
     const value = resolveFilterInput(row.field, row.value)
+    const suffix = row.mode === "exclude" ? "_exclude" : ""
 
     if (value) {
-      params.append(field.key, value)
+      params.append(`${field.key}${suffix}`, value)
     }
   })
 
@@ -544,7 +553,7 @@ onMounted(async () => {
             <div
               v-for="row in filterRows"
               :key="row.id"
-              class="grid gap-3 md:grid-cols-[minmax(0,220px)_minmax(0,1fr)_auto]"
+              class="grid gap-3 md:grid-cols-[minmax(0,220px)_minmax(0,86px)_minmax(0,1fr)_auto]"
             >
               <div>
                 <label class="mb-1 block text-sm font-medium text-slate-700">
@@ -558,6 +567,25 @@ onMounted(async () => {
                   @update:model-value="resetFilterRowValues(row)"
                   @select="resetFilterRowValues(row)"
                 />
+              </div>
+
+              <div>
+                <label class="mb-1 block text-sm font-medium text-slate-700">
+                  Условие
+                </label>
+                <select
+                  v-model="row.mode"
+                  class="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-center text-slate-900 outline-none focus:border-slate-500"
+                  aria-label="Условие фильтра"
+                >
+                  <option
+                    v-for="modeOption in filterModeOptions"
+                    :key="modeOption.key"
+                    :value="modeOption.key"
+                  >
+                    {{ modeOption.label }}
+                  </option>
+                </select>
               </div>
 
               <div v-if="isRangeFilter(row.field)" class="grid gap-3 sm:grid-cols-2">

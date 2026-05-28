@@ -252,7 +252,7 @@ async function uploadPdf(event) {
   if (!file || pdfUploading.value) return
 
   if (!isAllowedPdfSourceFile(file)) {
-    error.value = "Можно загрузить только PDF, DJVU или DJV"
+    error.value = "Можно загрузить только PDF или DjVu"
     return
   }
 
@@ -421,13 +421,13 @@ onMounted(() => {
 
             <div class="flex flex-wrap items-center gap-3">
               <button
-                v-if="isAuthenticated"
+                v-if="isAuthenticated && !volume.pdf_url"
                 type="button"
                 @click="openPdfPicker"
                 :disabled="pdfUploading"
                 class="rounded-xl border border-slate-300 px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {{ pdfUploading ? "Загрузка..." : "Загрузить PDF/DJVU" }}
+                {{ pdfUploading ? "Загрузка..." : "Загрузить PDF/DjVu" }}
               </button>
 
               <button

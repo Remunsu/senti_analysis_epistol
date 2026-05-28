@@ -18,7 +18,7 @@ const fragmentErrorsByWorkId = ref({})
 const selectedWorkIds = ref(new Set())
 const chartFilters = ref([])
 const selectedXAxis = ref("year")
-const selectedMetric = ref("distribution")
+const selectedMetric = ref("work_distribution")
 const selectedChartType = ref("stacked_bar")
 const chartContainer = ref(null)
 let pollTimer = null
@@ -38,7 +38,12 @@ const xAxisFields = [
   ...filterableFields.filter((field) => field.key !== "date"),
 ]
 const metricOptions = [
-  { key: "distribution", label: "Количество негативных, нейтральных и позитивных" },
+  { key: "work_distribution", label: "Количество документов с определенной оценкой" },
+  { key: "fragment_distribution", label: "Количество фрагментов с определенной оценкой" },
+]
+const filterModeOptions = [
+  { key: "include", label: "Показать" },
+  { key: "exclude", label: "Исключить" },
 ]
 const chartTypeOptions = computed(() => {
   return [
@@ -52,7 +57,9 @@ const filteredSummary = computed(() => {
     return chartFilters.value.every((filterRow) => {
       if (!filterRow.field || !filterRow.value) return true
 
-      return getFieldValue(item, filterRow.field) === filterRow.value
+      const matches = getFieldValue(item, filterRow.field) === filterRow.value
+
+      return filterRow.mode === "exclude" ? !matches : matches
     })
   })
 })
@@ -87,7 +94,7 @@ const distributionChartGroups = computed(() => {
 
   chartItems.value.forEach((item) => {
     const label = getFieldDisplayValue(item, renderedChart.value.xAxis)
-    const polarity = getWorkPolarity(item)
+    const counts = getDistributionCounts(item)
     const group = groups[label] || {
       label,
       works_count: 0,
@@ -97,9 +104,9 @@ const distributionChartGroups = computed(() => {
     }
 
     group.works_count += 1
-    group.negative_count += polarity === "-1" ? 1 : 0
-    group.neutral_count += polarity === "0" ? 1 : 0
-    group.positive_count += polarity === "1" ? 1 : 0
+    group.negative_count += counts.negative
+    group.neutral_count += counts.neutral
+    group.positive_count += counts.positive
     groups[label] = group
   })
 
@@ -174,6 +181,24 @@ function getWorkPolarity(item) {
   return "0"
 }
 
+function getDistributionCounts(item) {
+  if (renderedChart.value.metric === "fragment_distribution") {
+    return {
+      negative: Number(item?.negative_count || 0),
+      neutral: Number(item?.neutral_count || 0),
+      positive: Number(item?.positive_count || 0),
+    }
+  }
+
+  const polarity = getWorkPolarity(item)
+
+  return {
+    negative: polarity === "-1" ? 1 : 0,
+    neutral: polarity === "0" ? 1 : 0,
+    positive: polarity === "1" ? 1 : 0,
+  }
+}
+
 function fieldLabel(field) {
   return xAxisFields.find((option) => option.key === field)?.label || field
 }
@@ -202,7 +227,7 @@ function filterValueOptions(field) {
 function addChartFilter() {
   chartFilters.value = [
     ...chartFilters.value,
-    { id: Date.now() + Math.random(), field: "year", value: "" },
+    { id: Date.now() + Math.random(), field: "year", mode: "include", value: "" },
   ]
 }
 
@@ -307,6 +332,8 @@ function buildDistributionChartOption() {
   const labels = distributionChartGroups.value.map((group) => group.label)
   const seriesType = renderedChart.value.type === "line" ? "line" : "bar"
   const stack = renderedChart.value.type === "stacked_bar" ? "sentiment" : undefined
+  const subjectLabel = renderedChart.value.metric === "fragment_distribution" ? "фрагменты" : "документы"
+  const yAxisName = renderedChart.value.metric === "fragment_distribution" ? "Фрагменты" : "Документы"
 
   return {
     ...buildBaseChartOption(),
@@ -321,26 +348,26 @@ function buildDistributionChartOption() {
     },
     yAxis: {
       type: "value",
-      name: "Произведения",
+      name: yAxisName,
       minInterval: 1,
     },
     series: [
       {
-        name: "Негативные произведения",
+        name: `Негативные ${subjectLabel}`,
         type: seriesType,
         stack,
         smooth: seriesType === "line",
         data: distributionChartGroups.value.map((group) => group.negative_count),
       },
       {
-        name: "Нейтральные произведения",
+        name: `Нейтральные ${subjectLabel}`,
         type: seriesType,
         stack,
         smooth: seriesType === "line",
         data: distributionChartGroups.value.map((group) => group.neutral_count),
       },
       {
-        name: "Позитивные произведения",
+        name: `Позитивные ${subjectLabel}`,
         type: seriesType,
         stack,
         smooth: seriesType === "line",
@@ -616,7 +643,7 @@ onUnmounted(() => {
                   Конструктор графика
                 </h2>
                 <p class="mt-1 text-sm text-slate-600">
-                  Найдено: {{ filteredSummary.length }} · выбрано в найденных: {{ selectedFilteredWorksCount }}
+                  Выбрано: {{ selectedFilteredWorksCount }}
                 </p>
               </div>
             </div>
@@ -627,7 +654,7 @@ onUnmounted(() => {
               <div
                 v-for="filterRow in chartFilters"
                 :key="filterRow.id"
-                class="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]"
+                class="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,0.7fr)_minmax(0,1fr)_auto]"
               >
                 <select
                   :value="filterRow.field"
@@ -640,6 +667,19 @@ onUnmounted(() => {
                     :value="field.key"
                   >
                     {{ field.label }}
+                  </option>
+                </select>
+
+                <select
+                  v-model="filterRow.mode"
+                  class="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-slate-900 outline-none focus:border-slate-500"
+                >
+                  <option
+                    v-for="modeOption in filterModeOptions"
+                    :key="modeOption.key"
+                    :value="modeOption.key"
+                  >
+                    {{ modeOption.label }}
                   </option>
                 </select>
 
@@ -698,9 +738,18 @@ onUnmounted(() => {
                 <label class="mb-1 block text-sm font-medium text-slate-700">
                   Ось Y
                 </label>
-                <div class="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2 text-slate-700">
-                  {{ metricOptions[0].label }}
-                </div>
+                <select
+                  v-model="selectedMetric"
+                  class="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-slate-900 outline-none focus:border-slate-500"
+                >
+                  <option
+                    v-for="metricOption in metricOptions"
+                    :key="metricOption.key"
+                    :value="metricOption.key"
+                  >
+                    {{ metricOption.label }}
+                  </option>
+                </select>
               </div>
 
               <div>

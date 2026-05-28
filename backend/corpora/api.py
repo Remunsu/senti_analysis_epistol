@@ -512,20 +512,33 @@ class WorkFilterMixin:
     def apply_work_filters(self, queryset, params):
         for field in self.multi_value_filter_fields:
             values = [value for value in params.getlist(field) if value != ""]
+            excluded_values = [value for value in params.getlist(f"{field}_exclude") if value != ""]
 
             if field == "volume":
                 values = self.clean_filter_values(values, numeric=True)
+                excluded_values = self.clean_filter_values(excluded_values, numeric=True)
 
             if values:
                 queryset = queryset.filter(**{f"{field}__in": values})
+
+            if excluded_values:
+                queryset = queryset.exclude(**{f"{field}__in": excluded_values})
 
         date_query = self.build_date_query(params)
         if date_query:
             queryset = queryset.filter(date_query)
 
+        date_exclude_query = self.build_date_query(params, exclude=True)
+        if date_exclude_query:
+            queryset = queryset.exclude(date_exclude_query)
+
         number_query = self.build_range_query("number", params, numeric=True)
         if number_query:
             queryset = queryset.filter(number_query)
+
+        number_exclude_query = self.build_range_query("number", params, numeric=True, exclude=True)
+        if number_exclude_query:
+            queryset = queryset.exclude(number_exclude_query)
 
         search_value = params.get("search", "")
         if search_value:
@@ -538,11 +551,12 @@ class WorkFilterMixin:
 
         return queryset
 
-    def build_range_query(self, field: str, params, numeric: bool = False):
-        exact_values = self.clean_filter_values(params.getlist(field), numeric)
-        range_values = params.getlist(f"{field}_range")
-        from_values = self.clean_filter_values(params.getlist(f"{field}_from"), numeric)
-        to_values = self.clean_filter_values(params.getlist(f"{field}_to"), numeric)
+    def build_range_query(self, field: str, params, numeric: bool = False, exclude: bool = False):
+        suffix = "_exclude" if exclude else ""
+        exact_values = self.clean_filter_values(params.getlist(f"{field}{suffix}"), numeric)
+        range_values = params.getlist(f"{field}_range{suffix}")
+        from_values = self.clean_filter_values(params.getlist(f"{field}_from{suffix}"), numeric)
+        to_values = self.clean_filter_values(params.getlist(f"{field}_to{suffix}"), numeric)
 
         query = Q()
 
@@ -571,11 +585,12 @@ class WorkFilterMixin:
 
         return query
 
-    def build_date_query(self, params):
-        exact_values = self.clean_filter_values(params.getlist("date"))
-        range_values = params.getlist("date_range")
-        from_values = self.clean_filter_values(params.getlist("date_from"))
-        to_values = self.clean_filter_values(params.getlist("date_to"))
+    def build_date_query(self, params, exclude: bool = False):
+        suffix = "_exclude" if exclude else ""
+        exact_values = self.clean_filter_values(params.getlist(f"date{suffix}"))
+        range_values = params.getlist(f"date_range{suffix}")
+        from_values = self.clean_filter_values(params.getlist(f"date_from{suffix}"))
+        to_values = self.clean_filter_values(params.getlist(f"date_to{suffix}"))
 
         query = Q()
 
