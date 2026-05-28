@@ -1,7 +1,7 @@
 # Requirements
 - Python>=3.12
-- Node
-- PostgreSQL
+- Node>=20.19
+- PostgreSQL>=13
 - DjVuLibre with `ddjvu` in PATH, optional for DJVU upload conversion
 
 # Install Django and PostgreSQL
