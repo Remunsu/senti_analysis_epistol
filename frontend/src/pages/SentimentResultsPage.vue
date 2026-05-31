@@ -23,6 +23,7 @@ const selectedChartType = ref("stacked_bar")
 const chartContainer = ref(null)
 const focusedChartGroupLabel = ref("")
 const focusedChartSentimentLabel = ref("")
+const initialCompletedSelectionApplied = ref(false)
 let pollTimer = null
 let chartInstance = null
 
@@ -298,6 +299,16 @@ function deselectFilteredWorks() {
 
 function clearSelectedWorks() {
   selectedWorkIds.value = new Set()
+}
+
+function applyInitialCompletedSelection(runData, summaryData, silent) {
+  if (silent || initialCompletedSelectionApplied.value) return
+
+  initialCompletedSelectionApplied.value = true
+
+  if (runData?.status !== "completed" || !summaryData?.length) return
+
+  selectedWorkIds.value = new Set(summaryData.map((item) => item.original_work_id))
 }
 
 function focusChartGroup(groupLabel, sentimentLabel = "") {
@@ -620,6 +631,7 @@ async function fetchResults({ silent = false } = {}) {
 
     run.value = data.run
     summary.value = data.summary
+    applyInitialCompletedSelection(data.run, data.summary, silent)
     scheduleResultsPolling()
   } catch (err) {
     error.value = err.message || "Неизвестная ошибка"
@@ -633,6 +645,7 @@ watch(runId, () => {
   clearPollTimer()
   expandedWorkIds.value = new Set()
   selectedWorkIds.value = new Set()
+  initialCompletedSelectionApplied.value = false
   chartFilters.value = []
   disposeEcharts()
   fragmentsByWorkId.value = {}
