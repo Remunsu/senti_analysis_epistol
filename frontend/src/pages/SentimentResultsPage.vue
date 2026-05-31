@@ -4,6 +4,7 @@ import * as echarts from "echarts"
 import { RouterLink, useRoute } from "vue-router"
 import { API_BASE_URL, readApiResponse } from "../api"
 import { authFetch, fetchAuthStatus, isAuthenticated } from "../auth"
+import PaginationControls from "../components/PaginationControls.vue"
 
 const route = useRoute()
 
@@ -24,10 +25,12 @@ const chartContainer = ref(null)
 const focusedChartGroupLabel = ref("")
 const focusedChartSentimentLabel = ref("")
 const initialCompletedSelectionApplied = ref(false)
+const resultsCurrentPage = ref(1)
 let pollTimer = null
 let chartInstance = null
 
 const runId = computed(() => route.params.runId)
+const resultsPageSize = 50
 
 const filterableFields = [
   { key: "year", label: "Год" },
@@ -75,6 +78,16 @@ const visibleSummary = computed(() => {
     return getFieldDisplayValue(item, renderedChart.value.xAxis) === focusedChartGroupLabel.value
       && matchesFocusedChartSentiment(item)
   })
+})
+const resultsTotalPages = computed(() => {
+  if (!visibleSummary.value.length) return 1
+
+  return Math.ceil(visibleSummary.value.length / resultsPageSize)
+})
+const paginatedVisibleSummary = computed(() => {
+  const start = (resultsCurrentPage.value - 1) * resultsPageSize
+
+  return visibleSummary.value.slice(start, start + resultsPageSize)
 })
 const selectedFilteredSummary = computed(() => {
   return filteredSummary.value.filter((item) => selectedWorkIds.value.has(item.original_work_id))
@@ -299,6 +312,22 @@ function deselectFilteredWorks() {
 
 function clearSelectedWorks() {
   selectedWorkIds.value = new Set()
+}
+
+function goToPreviousResultsPage() {
+  if (resultsCurrentPage.value > 1) {
+    resultsCurrentPage.value -= 1
+  }
+}
+
+function goToNextResultsPage() {
+  if (resultsCurrentPage.value < resultsTotalPages.value) {
+    resultsCurrentPage.value += 1
+  }
+}
+
+function goToResultsPage(page) {
+  resultsCurrentPage.value = Math.min(Math.max(Number(page) || 1, 1), resultsTotalPages.value)
 }
 
 function applyInitialCompletedSelection(runData, summaryData, silent) {
@@ -660,7 +689,18 @@ watch(selectedMetric, () => {
 
 watch([selectedXAxis, chartFilters], () => {
   clearChartGroupFocus()
+  resultsCurrentPage.value = 1
 }, { deep: true })
+
+watch([focusedChartGroupLabel, focusedChartSentimentLabel], () => {
+  resultsCurrentPage.value = 1
+})
+
+watch(resultsTotalPages, (totalPages) => {
+  if (resultsCurrentPage.value > totalPages) {
+    resultsCurrentPage.value = totalPages
+  }
+})
 
 watch(echartsOption, () => {
   if (!echartsOption.value) {
@@ -957,7 +997,7 @@ onUnmounted(() => {
 
               <tbody class="divide-y divide-slate-200">
                 <template
-                  v-for="item in visibleSummary"
+                  v-for="item in paginatedVisibleSummary"
                   :key="item.original_work_id"
                 >
                   <tr class="hover:bg-slate-50">
@@ -1075,6 +1115,17 @@ onUnmounted(() => {
               </tbody>
             </table>
           </div>
+
+          <PaginationControls
+            :current-page="resultsCurrentPage"
+            :total-pages="resultsTotalPages"
+            :has-previous="resultsCurrentPage > 1"
+            :has-next="resultsCurrentPage < resultsTotalPages"
+            :loading="loading"
+            @previous="goToPreviousResultsPage"
+            @next="goToNextResultsPage"
+            @page="goToResultsPage"
+          />
         </section>
       </template>
     </div>
