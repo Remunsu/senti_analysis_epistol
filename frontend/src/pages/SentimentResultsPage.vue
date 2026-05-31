@@ -41,16 +41,18 @@ const xAxisFields = [
 const metricOptions = [
   { key: "work_distribution", label: "Количество документов с определенной оценкой" },
   { key: "fragment_distribution", label: "Количество фрагментов с определенной оценкой" },
+  { key: "work_percentage_distribution", label: "Процентное соотношение документов по тональности" },
+  { key: "fragment_percentage_distribution", label: "Процентное соотношение фрагментов по тональности" },
 ]
 const filterModeOptions = [
-  { key: "include", label: "Показать" },
-  { key: "exclude", label: "Исключить" },
+  { key: "include", label: "=" },
+  { key: "exclude", label: "≠" },
 ]
 const chartTypeOptions = computed(() => {
   return [
     { key: "stacked_bar", label: "Составные столбики" },
     { key: "grouped_bar", label: "Группированные столбики" },
-    { key: "line", label: "Линии" },
+    { key: "area", label: "Области" },
   ]
 })
 const filteredSummary = computed(() => {
@@ -190,7 +192,7 @@ function getWorkPolarity(item) {
 }
 
 function getDistributionCounts(item) {
-  if (renderedChart.value.metric === "fragment_distribution") {
+  if (isFragmentMetric()) {
     return {
       negative: Number(item?.negative_count || 0),
       neutral: Number(item?.neutral_count || 0),
@@ -205,6 +207,14 @@ function getDistributionCounts(item) {
     neutral: polarity === "0" ? 1 : 0,
     positive: polarity === "1" ? 1 : 0,
   }
+}
+
+function isFragmentMetric(metric = renderedChart.value.metric) {
+  return String(metric || "").startsWith("fragment_")
+}
+
+function isPercentageMetric(metric = renderedChart.value.metric) {
+  return String(metric || "").includes("_percentage_")
 }
 
 function fieldLabel(field) {
@@ -346,15 +356,19 @@ function buildBaseChartOption() {
 
 function buildDistributionChartOption() {
   const labels = distributionChartGroups.value.map((group) => group.label)
-  const seriesType = renderedChart.value.type === "line" ? "line" : "bar"
+  const isAreaChart = renderedChart.value.type === "area"
+  const seriesType = isAreaChart ? "line" : "bar"
   const stack = renderedChart.value.type === "stacked_bar" ? "sentiment" : undefined
-  const subjectLabel = renderedChart.value.metric === "fragment_distribution" ? "фрагменты" : "документы"
-  const yAxisName = renderedChart.value.metric === "fragment_distribution" ? "Фрагменты" : "Документы"
+  const subjectLabel = isFragmentMetric() ? "фрагменты" : "документы"
+  const yAxisName = isPercentageMetric() ? "Проценты" : (isFragmentMetric() ? "Фрагменты" : "Документы")
 
   return {
     ...buildBaseChartOption(),
     tooltip: {
       trigger: "axis",
+      valueFormatter: (value) => {
+        return isPercentageMetric() ? `${Number(value || 0).toFixed(1)}%` : value
+      },
     },
     xAxis: {
       type: "category",
@@ -365,32 +379,55 @@ function buildDistributionChartOption() {
     yAxis: {
       type: "value",
       name: yAxisName,
-      minInterval: 1,
+      minInterval: isPercentageMetric() ? undefined : 1,
+      max: isPercentageMetric() ? 100 : undefined,
+      axisLabel: isPercentageMetric()
+        ? {
+            formatter: "{value}%",
+          }
+        : undefined,
     },
     series: [
       {
         name: `Негативные ${subjectLabel}`,
         type: seriesType,
         stack,
-        smooth: seriesType === "line",
-        data: distributionChartGroups.value.map((group) => group.negative_count),
+        smooth: isAreaChart,
+        areaStyle: isAreaChart ? {} : undefined,
+        data: distributionChartGroups.value.map((group) => getChartGroupValue(group, "negative_count")),
       },
       {
         name: `Нейтральные ${subjectLabel}`,
         type: seriesType,
         stack,
-        smooth: seriesType === "line",
-        data: distributionChartGroups.value.map((group) => group.neutral_count),
+        smooth: isAreaChart,
+        areaStyle: isAreaChart ? {} : undefined,
+        data: distributionChartGroups.value.map((group) => getChartGroupValue(group, "neutral_count")),
       },
       {
         name: `Позитивные ${subjectLabel}`,
         type: seriesType,
         stack,
-        smooth: seriesType === "line",
-        data: distributionChartGroups.value.map((group) => group.positive_count),
+        smooth: isAreaChart,
+        areaStyle: isAreaChart ? {} : undefined,
+        data: distributionChartGroups.value.map((group) => getChartGroupValue(group, "positive_count")),
       },
     ],
   }
+}
+
+function getChartGroupValue(group, key) {
+  const value = Number(group[key] || 0)
+
+  if (!isPercentageMetric()) return value
+
+  const total = Number(group.negative_count || 0)
+    + Number(group.neutral_count || 0)
+    + Number(group.positive_count || 0)
+
+  if (!total) return 0
+
+  return Number(((value / total) * 100).toFixed(1))
 }
 
 function chartAxisLabelOptions(labels) {
@@ -417,9 +454,11 @@ function updateEcharts() {
 }
 
 function handleChartClick(event) {
-  if (!event?.name) return
+  const groupLabel = event?.name
 
-  focusChartGroup(event.name)
+  if (!groupLabel) return
+
+  focusChartGroup(groupLabel)
 }
 
 function resizeEcharts() {
