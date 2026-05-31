@@ -795,6 +795,7 @@ class SentimentSummaryMixin:
             negative_count=Count("id", filter=Q(label="-1")),
             neutral_count=Count("id", filter=Q(label="0")),
             positive_count=Count("id", filter=Q(label="1")),
+            average_confidence=Avg("confidence"),
         ).order_by("original_work_id")
 
         summaries = []
@@ -821,6 +822,7 @@ class SentimentSummaryMixin:
                     "negative_count": result["negative_count"],
                     "neutral_count": result["neutral_count"],
                     "positive_count": result["positive_count"],
+                    "average_confidence": result["average_confidence"] or 0,
                     "score_sum": score_sum,
                     "mean_score": mean_score,
                     "negative_share": result["negative_count"] / segments_count,

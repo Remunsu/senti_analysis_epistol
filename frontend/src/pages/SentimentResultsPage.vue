@@ -175,6 +175,10 @@ function scoreLabel(score) {
   return Number(score || 0).toFixed(2)
 }
 
+function confidenceLabel(confidence) {
+  return `${Math.round(Number(confidence || 0) * 100)}%`
+}
+
 function scoreClass(score) {
   if (score < -0.15) return "text-red-700"
   if (score > 0.15) return "text-emerald-700"
@@ -585,9 +589,6 @@ async function fetchResults({ silent = false } = {}) {
 
     run.value = data.run
     summary.value = data.summary
-    if (selectedWorkIds.value.size === 0 && summary.value.length) {
-      selectedWorkIds.value = new Set(summary.value.map((item) => item.original_work_id))
-    }
     scheduleResultsPolling()
   } catch (err) {
     error.value = err.message || "Неизвестная ошибка"
@@ -898,10 +899,11 @@ onUnmounted(() => {
                   <th class="w-14 px-5 py-3 font-semibold"></th>
                   <th class="w-[36%] px-5 py-3 font-semibold">Название</th>
                   <th class="w-[12%] px-5 py-3 font-semibold">Среднее</th>
-                  <th class="w-[12%] px-5 py-3 font-semibold">Нег.</th>
-                  <th class="w-[12%] px-5 py-3 font-semibold">Нейтр.</th>
-                  <th class="w-[12%] px-5 py-3 font-semibold">Поз.</th>
-                  <th class="w-[16%] px-5 py-3 font-semibold">Фрагменты</th>
+                  <th class="w-[10%] px-5 py-3 font-semibold">Уверенность</th>
+                  <th class="w-[10%] px-5 py-3 font-semibold">Нег.</th>
+                  <th class="w-[10%] px-5 py-3 font-semibold">Нейтр.</th>
+                  <th class="w-[10%] px-5 py-3 font-semibold">Поз.</th>
+                  <th class="w-[12%] px-5 py-3 font-semibold">Фрагменты</th>
                 </tr>
               </thead>
 
@@ -950,6 +952,9 @@ onUnmounted(() => {
                     <td class="px-5 py-3 font-semibold" :class="scoreClass(item.mean_score)">
                       {{ item.mean_score.toFixed(2) }}
                     </td>
+                    <td class="px-5 py-3 font-semibold text-slate-700">
+                      {{ confidenceLabel(item.average_confidence) }}
+                    </td>
                     <td class="px-5 py-3 text-red-700">{{ item.negative_count }}</td>
                     <td class="px-5 py-3 text-slate-700">{{ item.neutral_count }}</td>
                     <td class="px-5 py-3 text-emerald-700">{{ item.positive_count }}</td>
@@ -957,7 +962,7 @@ onUnmounted(() => {
                   </tr>
 
                   <tr v-if="isWorkExpanded(item.original_work_id)" class="bg-slate-50/70">
-                    <td colspan="8" class="px-5 py-4">
+                    <td colspan="9" class="px-5 py-4">
                       <p
                         v-if="fragmentLoadingByWorkId[item.original_work_id]"
                         class="text-sm text-slate-500"
@@ -992,6 +997,9 @@ onUnmounted(() => {
                               >
                                 {{ sentimentMeta(fragment.label).label }}
                               </span>
+                              <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 ring-1 ring-slate-200">
+                                Уверенность {{ confidenceLabel(fragment.confidence) }}
+                              </span>
                             </div>
                             <p class="text-sm text-slate-500">
                               Слова {{ fragment.word_start + 1 }}-{{ fragment.word_end }}
@@ -1012,7 +1020,7 @@ onUnmounted(() => {
                 </template>
 
                 <tr v-if="visibleSummary.length === 0">
-                  <td colspan="8" class="px-5 py-8 text-center text-slate-500">
+                  <td colspan="9" class="px-5 py-8 text-center text-slate-500">
                     По фильтрам конструктора ничего не найдено.
                   </td>
                 </tr>
