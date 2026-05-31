@@ -22,6 +22,7 @@ const selectedMetric = ref("work_distribution")
 const selectedChartType = ref("stacked_bar")
 const chartContainer = ref(null)
 const focusedChartGroupLabel = ref("")
+const focusedChartSentimentLabel = ref("")
 let pollTimer = null
 let chartInstance = null
 
@@ -71,6 +72,7 @@ const visibleSummary = computed(() => {
 
   return filteredSummary.value.filter((item) => {
     return getFieldDisplayValue(item, renderedChart.value.xAxis) === focusedChartGroupLabel.value
+      && matchesFocusedChartSentiment(item)
   })
 })
 const selectedFilteredSummary = computed(() => {
@@ -298,12 +300,40 @@ function clearSelectedWorks() {
   selectedWorkIds.value = new Set()
 }
 
-function focusChartGroup(groupLabel) {
+function focusChartGroup(groupLabel, sentimentLabel = "") {
   focusedChartGroupLabel.value = String(groupLabel || "")
+  focusedChartSentimentLabel.value = sentimentLabel
 }
 
 function clearChartGroupFocus() {
   focusedChartGroupLabel.value = ""
+  focusedChartSentimentLabel.value = ""
+}
+
+function parseChartSentiment(seriesName) {
+  const name = String(seriesName || "")
+
+  if (name.startsWith("Негативные")) return "-1"
+  if (name.startsWith("Нейтральные")) return "0"
+  if (name.startsWith("Позитивные")) return "1"
+
+  return ""
+}
+
+function matchesFocusedChartSentiment(item) {
+  if (!focusedChartSentimentLabel.value) return true
+
+  if (isFragmentMetric()) {
+    const countBySentiment = {
+      "-1": item.negative_count,
+      "0": item.neutral_count,
+      "1": item.positive_count,
+    }
+
+    return Number(countBySentiment[focusedChartSentimentLabel.value] || 0) > 0
+  }
+
+  return getWorkPolarity(item) === focusedChartSentimentLabel.value
 }
 
 function compareLabels(first, second) {
@@ -459,10 +489,11 @@ function updateEcharts() {
 
 function handleChartClick(event) {
   const groupLabel = event?.name
+  const sentimentLabel = parseChartSentiment(event?.seriesName)
 
   if (!groupLabel) return
 
-  focusChartGroup(groupLabel)
+  focusChartGroup(groupLabel, sentimentLabel)
 }
 
 function resizeEcharts() {
@@ -869,7 +900,11 @@ onUnmounted(() => {
                 Итоги
               </h2>
               <p v-if="focusedChartGroupLabel" class="mt-1 text-sm text-slate-600">
-                Показана группа: {{ focusedChartGroupLabel }} · документов: {{ visibleSummary.length }}
+                Показана группа: {{ focusedChartGroupLabel }}
+                <template v-if="focusedChartSentimentLabel">
+                  · тональность: {{ sentimentMeta(focusedChartSentimentLabel).label.toLowerCase() }}
+                </template>
+                · документов: {{ visibleSummary.length }}
               </p>
             </div>
 
