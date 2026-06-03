@@ -10,7 +10,41 @@ Create virtual environment and install python packages:
 cd backend
 python -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt`
+pip install -r requirements.txt
+```
+
+Download local models into the repository-level `models/` directory:
+```
+cd backend
+source venv/bin/activate
+
+python - <<'PY'
+from huggingface_hub import snapshot_download
+
+snapshot_download(
+    repo_id="seara/rubert-base-cased-russian-sentiment",
+    local_dir="../models/seara_rubert-base-cased-russian-sentiment",
+)
+
+snapshot_download(
+    repo_id="urchade/gliner_multi-v2.1",
+    local_dir="../models/gliner_multi-v2.1",
+)
+PY
+```
+
+For offline GLiNER usage, save the base tokenizer into the downloaded GLiNER folder:
+```
+cd backend
+source venv/bin/activate
+
+python - <<'PY'
+from transformers import AutoTokenizer
+
+AutoTokenizer.from_pretrained("microsoft/mdeberta-v3-base").save_pretrained(
+    "../models/gliner_multi-v2.1"
+)
+PY
 ```
 
 Create *.env*:
@@ -22,11 +56,12 @@ DB_USER=
 DB_PASSWORD=
 DB_HOST=localhost
 DB_PORT=5432
-SENTIMENT_MODEL_PATH=
-RECIPIENT_GLINER_MODEL_PATH=
+SENTIMENT_MODEL_PATH=../models/blanchefort-rubert-base-cased-sentiment
+RECIPIENT_GLINER_MODEL_PATH=../models/gliner_multi-v2.1
 ```
+If a fine-tuned sentiment model is used, set `SENTIMENT_MODEL_PATH` to that local model folder instead.
 `RECIPIENT_GLINER_MODEL_PATH` can point either to the model snapshot itself or to a Hugging Face cache folder like `models--urchade--gliner_multi-v2.1`.
-For fully offline GLiNER usage, the GLiNER snapshot must also contain tokenizer files. If they are missing, save the base tokenizer into the snapshot, for example from `backend`:
+If `RECIPIENT_GLINER_MODEL_PATH` points to a Hugging Face cache folder, the GLiNER snapshot must also contain tokenizer files for fully offline usage. If they are missing, save the base tokenizer into the snapshot, for example from `backend`:
 ```
 python - <<'PY'
 from pathlib import Path
