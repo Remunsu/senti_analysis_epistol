@@ -5,7 +5,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import authenticate, get_user_model, login, logout
 from django.middleware.csrf import get_token
 from django.core.files import File
 from django.db.models import Avg, Count, Max, Q, Sum
@@ -101,6 +101,53 @@ class AuthLoginView(APIView):
         return Response(build_auth_payload(request))
 
 
+class AuthRegisterView(APIView):
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        username = str(request.data.get("username") or "").strip()
+        email = str(request.data.get("email") or "").strip()
+        password = request.data.get("password") or ""
+        password_confirm = request.data.get("password_confirm") or ""
+
+        if not username or not email or not password or not password_confirm:
+            return Response(
+                {"detail": "Заполните все поля"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if password != password_confirm:
+            return Response(
+                {"detail": "Пароли не совпадают"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if len(password) < 8:
+            return Response(
+                {"detail": "Пароль должен содержать не менее 8 символов"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        User = get_user_model()
+
+        if User.objects.filter(username=username).exists():
+            return Response(
+                {"detail": "Пользователь с таким логином уже существует"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if User.objects.filter(email=email).exists():
+            return Response(
+                {"detail": "Пользователь с такой почтой уже существует"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user = User.objects.create_user(username=username, email=email, password=password)
+        login(request, user)
+
+        return Response(build_auth_payload(request), status=status.HTTP_201_CREATED)
+
+
 class AuthLogoutView(APIView):
     permission_classes = [IsAuthenticated]
 
@@ -110,12 +157,12 @@ class AuthLogoutView(APIView):
         return Response(build_auth_payload(request))
 
 
-class AuthenticatedForUnsafeMethods(BasePermission):
+class StaffForUnsafeMethods(BasePermission):
     def has_permission(self, request, view):
         if request.method in SAFE_METHODS:
             return True
 
-        return request.user and request.user.is_authenticated
+        return request.user and request.user.is_authenticated and request.user.is_staff
 
 
 class EditableModelViewSet(
@@ -124,7 +171,7 @@ class EditableModelViewSet(
     mixins.UpdateModelMixin,
     viewsets.GenericViewSet,
 ):
-    permission_classes = [AuthenticatedForUnsafeMethods]
+    permission_classes = [StaffForUnsafeMethods]
 
 
 class VolumeViewSet(EditableModelViewSet, mixins.DestroyModelMixin):
@@ -433,7 +480,7 @@ def save_converted_djvu(volume, source_file):
 
 
 class XMLUploadView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [StaffForUnsafeMethods]
     parser_classes = [MultiPartParser, FormParser]
     allowed_content_types = {"text/xml", "application/xml", "application/octet-stream", ""}
     max_file_size = 200 * 1024 * 1024
@@ -685,6 +732,9 @@ class SentimentRunMixin(WorkFilterMixin):
         return segment_size
 
     def user_can_create_run(self, user):
+        if not user.is_authenticated:
+            return True
+
         if user.is_staff or user.is_superuser:
             return True
 
@@ -692,7 +742,7 @@ class SentimentRunMixin(WorkFilterMixin):
 
     def create_run(self, user, work_ids, segment_size, max_segment_size=None, window_step=0):
         return SentimentAnalysisRun.objects.create(
-            user=user,
+            user=user if user.is_authenticated else None,
             model_kind="rubert",
             model_name=get_model_display_name(),
             segment_size=segment_size,
@@ -795,7 +845,7 @@ class SentimentSummaryMixin:
             negative_count=Count("id", filter=Q(label="-1")),
             neutral_count=Count("id", filter=Q(label="0")),
             positive_count=Count("id", filter=Q(label="1")),
-            average_confidence=Avg("confidence"),
+            average_confidence=Avg("confidence", filter=Q(confidence__gt=0)),
         ).order_by("original_work_id")
 
         summaries = []
@@ -822,7 +872,7 @@ class SentimentSummaryMixin:
                     "negative_count": result["negative_count"],
                     "neutral_count": result["neutral_count"],
                     "positive_count": result["positive_count"],
-                    "average_confidence": result["average_confidence"] or 0,
+                    "average_confidence": result["average_confidence"],
                     "score_sum": score_sum,
                     "mean_score": mean_score,
                     "negative_share": result["negative_count"] / segments_count,
@@ -996,6 +1046,57 @@ class SentimentAnalysisWorkFragmentsView(SentimentAccessMixin, APIView):
             "fragments": fragments,
         })
 
+    def patch(self, request, run_id, original_work_id):
+        run = self.get_run_queryset(request).filter(id=run_id).first()
+
+        if not run:
+            return Response(
+                {"detail": "Результаты анализа не найдены"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        label = str(request.data.get("label") or "")
+        allowed_labels = {choice[0] for choice in SentimentAnalysisResult.LABEL_CHOICES}
+
+        if label not in allowed_labels:
+            return Response(
+                {"detail": "Некорректная тональность фрагмента"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            segment_index = int(request.data.get("segment_index"))
+        except (TypeError, ValueError):
+            return Response(
+                {"detail": "Некорректный номер фрагмента"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        fragment = (
+            SentimentAnalysisResult.objects
+            .filter(run=run, original_work_id=original_work_id, segment_index=segment_index)
+            .first()
+        )
+
+        if not fragment:
+            return Response(
+                {"detail": "Фрагмент не найден"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        fragment.label = label
+        fragment.confidence = 0
+        fragment.save(update_fields=["label", "confidence"])
+
+        return Response({
+            "segment_index": fragment.segment_index,
+            "word_start": fragment.word_start,
+            "word_end": fragment.word_end,
+            "text": fragment.text,
+            "label": fragment.label,
+            "confidence": fragment.confidence,
+        })
+
 
 class SentimentAnalysisRunsView(SentimentAccessMixin, APIView):
     def get(self, request):
@@ -1007,6 +1108,8 @@ class SentimentAnalysisRunsView(SentimentAccessMixin, APIView):
 
 
 class SentimentAnalysisRunDetailView(SentimentAccessMixin, APIView):
+    permission_classes = [IsAuthenticated]
+
     def delete(self, request, run_id):
         run = self.get_run_queryset(request).filter(id=run_id).first()
 

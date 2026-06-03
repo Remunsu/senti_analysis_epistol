@@ -1,7 +1,7 @@
 <script setup>
 import { onMounted, ref } from "vue"
 import { RouterLink } from "vue-router"
-import { currentUser, fetchAuthStatus, isAuthenticated, logout } from "../auth"
+import { currentUser, fetchAuthStatus, isAuthenticated, isStaff, logout } from "../auth"
 
 const error = ref("")
 
@@ -48,7 +48,7 @@ onMounted(() => {
           Тома
         </RouterLink>
         <RouterLink
-          v-if="isAuthenticated"
+          v-if="isStaff"
           to="/upload"
           class="rounded-lg px-3 py-2 font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
           active-class="bg-slate-900 text-white hover:bg-slate-900 hover:text-white"
@@ -79,6 +79,14 @@ onMounted(() => {
           active-class="bg-slate-900 text-white hover:bg-slate-900 hover:text-white"
         >
           Войти
+        </RouterLink>
+        <RouterLink
+          v-if="!isAuthenticated"
+          to="/register"
+          class="rounded-lg px-3 py-2 font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+          active-class="bg-slate-900 text-white hover:bg-slate-900 hover:text-white"
+        >
+          Регистрация
         </RouterLink>
 
         <span v-if="isAuthenticated" class="ml-2 text-slate-400">

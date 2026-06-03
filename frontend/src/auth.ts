@@ -25,6 +25,7 @@ export const currentUser = user
 export const authLoaded = loaded
 export const authLoading = loading
 export const isAuthenticated = computed(() => Boolean(user.value))
+export const isStaff = computed(() => Boolean(user.value?.is_staff || user.value?.is_superuser))
 
 export async function fetchAuthStatus(force = false) {
   if (loaded.value && !force) return user.value
@@ -70,6 +71,35 @@ export async function login(username: string, password: string) {
 
   if (!response.ok) {
     throw new Error(data.detail || "Не удалось войти")
+  }
+
+  applyAuthPayload(data)
+  loaded.value = true
+
+  return user.value
+}
+
+export async function register(username: string, email: string, password: string, passwordConfirm: string) {
+  await ensureCsrfToken()
+
+  const response = await fetch(`${API_BASE_URL}/auth/register/`, {
+    method: "POST",
+    credentials: "include",
+    headers: {
+      "Content-Type": "application/json",
+      "X-CSRFToken": csrfToken.value,
+    },
+    body: JSON.stringify({
+      username,
+      email,
+      password,
+      password_confirm: passwordConfirm,
+    }),
+  })
+  const data = await readApiResponse(response, "Не удалось зарегистрироваться") as AuthPayload
+
+  if (!response.ok) {
+    throw new Error(data.detail || "Не удалось зарегистрироваться")
   }
 
   applyAuthPayload(data)

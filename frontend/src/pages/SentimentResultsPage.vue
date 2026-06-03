@@ -16,6 +16,7 @@ const expandedWorkIds = ref(new Set())
 const fragmentsByWorkId = ref({})
 const fragmentLoadingByWorkId = ref({})
 const fragmentErrorsByWorkId = ref({})
+const fragmentSavingByKey = ref({})
 const selectedWorkIds = ref(new Set())
 const chartFilters = ref([])
 const selectedXAxis = ref("year")
@@ -181,6 +182,12 @@ const sentimentLabels = {
   },
 }
 
+const sentimentOptions = [
+  { value: "-1", label: "Негативная" },
+  { value: "0", label: "Нейтральная" },
+  { value: "1", label: "Позитивная" },
+]
+
 function percent(value, total) {
   if (!total) return 0
 
@@ -192,7 +199,15 @@ function scoreLabel(score) {
 }
 
 function confidenceLabel(confidence) {
+  if (confidence === null || confidence === undefined || confidence === "") {
+    return "-"
+  }
+
   return `${Math.round(Number(confidence || 0) * 100)}%`
+}
+
+function hasConfidence(confidence) {
+  return Number(confidence || 0) > 0
 }
 
 function scoreClass(score) {
@@ -622,6 +637,61 @@ async function fetchWorkFragments(originalWorkId) {
   }
 }
 
+function getFragmentKey(originalWorkId, segmentIndex) {
+  return `${originalWorkId}:${segmentIndex}`
+}
+
+async function updateFragmentLabel(originalWorkId, fragment, label) {
+  const previousLabel = fragment.label
+  const key = getFragmentKey(originalWorkId, fragment.segment_index)
+
+  if (label === previousLabel || fragmentSavingByKey.value[key]) return
+
+  fragmentSavingByKey.value = {
+    ...fragmentSavingByKey.value,
+    [key]: true,
+  }
+  error.value = ""
+
+  try {
+    const response = await authFetch(
+      `${API_BASE_URL}/sentiment/results/${runId.value}/works/${originalWorkId}/`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          segment_index: fragment.segment_index,
+          label,
+        }),
+      }
+    )
+    const data = await readApiResponse(response, "Не удалось изменить тональность")
+
+    if (!response.ok) {
+      throw new Error(data.detail || "Не удалось изменить тональность")
+    }
+
+    const fragments = fragmentsByWorkId.value[originalWorkId] || []
+
+    fragmentsByWorkId.value = {
+      ...fragmentsByWorkId.value,
+      [originalWorkId]: fragments.map((item) => (
+        item.segment_index === data.segment_index ? { ...item, ...data } : item
+      )),
+    }
+    await fetchResults({ silent: true })
+  } catch (err) {
+    error.value = err.message || "Неизвестная ошибка"
+  } finally {
+    fragmentSavingByKey.value = {
+      ...fragmentSavingByKey.value,
+      [key]: false,
+    }
+  }
+}
+
 function clearPollTimer() {
   if (!pollTimer) return
 
@@ -680,6 +750,7 @@ watch(runId, () => {
   fragmentsByWorkId.value = {}
   fragmentLoadingByWorkId.value = {}
   fragmentErrorsByWorkId.value = {}
+  fragmentSavingByKey.value = {}
   fetchResults()
 })
 
@@ -758,9 +829,14 @@ onUnmounted(() => {
         class="rounded-2xl bg-white p-5 text-slate-600 shadow-sm ring-1 ring-slate-200"
       >
         Результаты анализа доступны только вошедшим пользователям.
-        <RouterLink to="/login" class="font-medium text-slate-900 underline">
-          Войти
-        </RouterLink>
+        <div class="mt-3 flex flex-wrap gap-3">
+          <RouterLink to="/login" class="font-medium text-slate-900 underline">
+            Войти
+          </RouterLink>
+          <RouterLink to="/register" class="font-medium text-slate-900 underline">
+            Зарегистрироваться
+          </RouterLink>
+        </div>
       </div>
 
       <div v-else-if="loading" class="rounded-2xl bg-white p-5 text-slate-500 shadow-sm ring-1 ring-slate-200">
@@ -1079,13 +1155,24 @@ onUnmounted(() => {
                               <p class="text-sm font-semibold text-slate-900">
                                 Фрагмент {{ fragment.segment_index + 1 }}
                               </p>
-                              <span
-                                class="rounded-full px-3 py-1 text-xs font-medium ring-1"
-                                :class="sentimentMeta(fragment.label).class"
+                              <select
+                                :value="fragment.label"
+                                :disabled="fragmentSavingByKey[getFragmentKey(item.original_work_id, fragment.segment_index)]"
+                                class="cursor-pointer rounded-full border border-slate-300 bg-white px-3 py-1 text-xs font-medium text-slate-700 outline-none transition hover:border-slate-400 hover:bg-slate-50 hover:shadow-sm focus:border-slate-500 focus:ring-2 focus:ring-slate-200 disabled:cursor-not-allowed disabled:opacity-60"
+                                @change="updateFragmentLabel(item.original_work_id, fragment, $event.target.value)"
                               >
-                                {{ sentimentMeta(fragment.label).label }}
-                              </span>
-                              <span class="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 ring-1 ring-slate-200">
+                                <option
+                                  v-for="option in sentimentOptions"
+                                  :key="option.value"
+                                  :value="option.value"
+                                >
+                                  {{ option.label }}
+                                </option>
+                              </select>
+                              <span
+                                v-if="hasConfidence(fragment.confidence)"
+                                class="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700 ring-1 ring-slate-200"
+                              >
                                 Уверенность {{ confidenceLabel(fragment.confidence) }}
                               </span>
                             </div>

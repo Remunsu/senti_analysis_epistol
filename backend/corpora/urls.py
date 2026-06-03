@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .api import (
     AuthLoginView,
     AuthLogoutView,
+    AuthRegisterView,
     AuthStatusView,
     SentimentAnalysisRunDetailView,
     SentimentAnalysisRunsView,
@@ -21,6 +22,7 @@ router.register("works", WorkViewSet)
 urlpatterns = [
     path("auth/me/", AuthStatusView.as_view()),
     path("auth/login/", AuthLoginView.as_view()),
+    path("auth/register/", AuthRegisterView.as_view()),
     path("auth/logout/", AuthLogoutView.as_view()),
     path("sentiment/analyze/", SentimentAnalysisView.as_view()),
     path("sentiment/runs/", SentimentAnalysisRunsView.as_view()),

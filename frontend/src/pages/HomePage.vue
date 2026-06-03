@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from "vue"
 import { RouterLink } from "vue-router"
 import { API_BASE_URL } from "../api"
-import { currentUser, fetchAuthStatus, isAuthenticated } from "../auth"
+import { currentUser, fetchAuthStatus, isAuthenticated, isStaff } from "../auth"
 
 const authError = ref("")
 
@@ -27,9 +27,9 @@ const pageCards = computed(() => [
   {
     title: "Загрузка XML",
     description: "Загрузка XML-файлов томов.",
-    to: isAuthenticated.value ? "/upload" : "/login",
-    access: isAuthenticated.value ? "Доступно пользователю" : "Требуется авторизация",
-    available: isAuthenticated.value,
+    to: isStaff.value ? "/upload" : "/login",
+    access: isStaff.value ? "Доступно сотруднику" : "Требуются права staff",
+    available: isStaff.value,
   },
   {
     title: "Результаты анализа",

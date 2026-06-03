@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from "vue"
 import { RouterLink } from "vue-router"
 import { API_BASE_URL, readApiResponse } from "../api"
-import { authFetch, fetchAuthStatus, isAuthenticated } from "../auth"
+import { authFetch, fetchAuthStatus, isStaff } from "../auth"
 
 const selectedFiles = ref([])
 const submitting = ref(false)
@@ -88,8 +88,8 @@ onMounted(() => {
       </div>
 
       <section class="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-        <div v-if="!isAuthenticated" class="rounded-xl bg-amber-50 p-4 text-amber-800">
-          Загружать XML могут только вошедшие пользователи.
+        <div v-if="!isStaff" class="rounded-xl bg-amber-50 p-4 text-amber-800">
+          Загружать XML могут только пользователи с правами staff.
           <RouterLink to="/login" class="font-medium underline">
             Войти
           </RouterLink>

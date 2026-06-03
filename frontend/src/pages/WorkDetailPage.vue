@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue"
 import { RouterLink, useRoute } from "vue-router"
 import { API_BASE_URL, readApiResponse } from "../api"
-import { authFetch, fetchAuthStatus, isAuthenticated } from "../auth"
+import { authFetch, fetchAuthStatus, isStaff } from "../auth"
 
 const route = useRoute()
 
@@ -357,7 +357,7 @@ onBeforeUnmount(() => {
           </h1>
         </div>
 
-        <div v-if="work && isAuthenticated" class="flex flex-wrap gap-3">
+        <div v-if="work && isStaff" class="flex flex-wrap gap-3">
           <button
             v-if="!isEditing"
             type="button"

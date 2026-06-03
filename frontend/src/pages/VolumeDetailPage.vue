@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue"
 import { RouterLink, useRoute, useRouter } from "vue-router"
 import { API_BASE_URL, readApiResponse } from "../api"
-import { authFetch, fetchAuthStatus, isAuthenticated } from "../auth"
+import { authFetch, fetchAuthStatus, isStaff } from "../auth"
 import PaginationControls from "../components/PaginationControls.vue"
 
 const route = useRoute()
@@ -359,7 +359,7 @@ onMounted(() => {
           {{ volume?.title || "Том" }}
         </h1>
 
-        <div v-if="volume && isAuthenticated" class="flex flex-wrap gap-3">
+        <div v-if="volume && isStaff" class="flex flex-wrap gap-3">
           <button
             v-if="!isEditing"
             type="button"
@@ -421,7 +421,7 @@ onMounted(() => {
 
             <div class="flex flex-wrap items-center gap-3">
               <button
-                v-if="isAuthenticated && !volume.pdf_url"
+                v-if="isStaff && !volume.pdf_url"
                 type="button"
                 @click="openPdfPicker"
                 :disabled="pdfUploading"
@@ -431,7 +431,7 @@ onMounted(() => {
               </button>
 
               <button
-                v-if="isAuthenticated && volume.pdf_url"
+                v-if="isStaff && volume.pdf_url"
                 type="button"
                 @click="deletePdf"
                 :disabled="pdfDeleting || pdfUploading"
@@ -441,7 +441,7 @@ onMounted(() => {
               </button>
 
               <input
-                v-if="isAuthenticated"
+                v-if="isStaff"
                 ref="pdfInput"
                 type="file"
                 accept=".pdf,.djvu,.djv,application/pdf,image/vnd.djvu"

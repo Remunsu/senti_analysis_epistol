@@ -176,9 +176,14 @@ onUnmounted(() => {
         class="rounded-2xl bg-white p-5 text-slate-600 shadow-sm ring-1 ring-slate-200"
       >
         Результаты анализа доступны только вошедшим пользователям.
-        <RouterLink to="/login" class="font-medium text-slate-900 underline">
-          Войти
-        </RouterLink>
+        <div class="mt-3 flex flex-wrap gap-3">
+          <RouterLink to="/login" class="font-medium text-slate-900 underline">
+            Войти
+          </RouterLink>
+          <RouterLink to="/register" class="font-medium text-slate-900 underline">
+            Зарегистрироваться
+          </RouterLink>
+        </div>
       </div>
 
       <div v-else-if="loading" class="rounded-2xl bg-white p-5 text-slate-500 shadow-sm ring-1 ring-slate-200">
@@ -248,6 +253,7 @@ onUnmounted(() => {
                   Открыть
                 </RouterLink>
                 <button
+                  v-if="isAuthenticated"
                   type="button"
                   @click="deleteRun(run)"
                   :disabled="deletingId === run.id"

@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import HomePage from '../pages/HomePage.vue'
 import LoginPage from '../pages/LoginPage.vue'
 import NotFoundPage from '../pages/NotFoundPage.vue'
+import RegisterPage from '../pages/RegisterPage.vue'
 import SentimentResultsPage from '../pages/SentimentResultsPage.vue'
 import SentimentRunsPage from '../pages/SentimentRunsPage.vue'
 import UploadPage from '../pages/UploadPage.vue'
@@ -47,6 +48,11 @@ const router = createRouter({
       path: '/login',
       name: 'login',
       component: LoginPage,
+    },
+    {
+      path: '/register',
+      name: 'register',
+      component: RegisterPage,
     },
     {
       path: '/sentiment/results',
