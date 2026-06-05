@@ -47,8 +47,8 @@ const xAxisFields = [
 const metricOptions = [
   { key: "work_distribution", label: "Количество документов с определенной оценкой" },
   { key: "fragment_distribution", label: "Количество фрагментов с определенной оценкой" },
-  { key: "work_percentage_distribution", label: "Процентное соотношение документов по тональности" },
-  { key: "fragment_percentage_distribution", label: "Процентное соотношение фрагментов по тональности" },
+  { key: "work_mean_score", label: "Средняя оценка документов" },
+  { key: "fragment_mean_score", label: "Средняя оценка фрагментов" },
 ]
 const filterModeOptions = [
   { key: "include", label: "=" },
@@ -98,10 +98,11 @@ const allFilteredSelected = computed(() => {
   return filteredSummary.value.length > 0
     && filteredSummary.value.every((item) => selectedWorkIds.value.has(item.original_work_id))
 })
+const isSelectedScoreMetric = computed(() => isScoreMetric(selectedMetric.value))
 const renderedChart = computed(() => ({
   xAxis: selectedXAxis.value,
   metric: selectedMetric.value,
-  type: selectedChartType.value,
+  type: isSelectedScoreMetric.value ? "grouped_bar" : selectedChartType.value,
   visible: selectedFilteredWorksCount.value > 0,
 }))
 const renderedXAxisLabel = computed(() => fieldLabel(renderedChart.value.xAxis))
@@ -109,8 +110,12 @@ const renderedMetricLabel = computed(() => {
   return metricOptions.find((option) => option.key === renderedChart.value.metric)?.label || ""
 })
 const renderedChartTypeLabel = computed(() => {
+  if (isSelectedScoreMetric.value) return "Столбики"
+
   return chartTypeOptions.value.find((option) => option.key === renderedChart.value.type)?.label || ""
 })
+const chartFocusActive = computed(() => Boolean(focusedChartGroupLabel.value))
+const resultsTableColspan = computed(() => chartFocusActive.value ? 8 : 9)
 const chartItems = computed(() => {
   if (!renderedChart.value.visible) return []
 
@@ -125,12 +130,18 @@ const distributionChartGroups = computed(() => {
     const group = groups[label] || {
       label,
       works_count: 0,
+      segments_count: 0,
+      score_sum: 0,
+      work_score_sum: 0,
       negative_count: 0,
       neutral_count: 0,
       positive_count: 0,
     }
 
     group.works_count += 1
+    group.segments_count += Number(item.segments_count || 0)
+    group.score_sum += Number(item.score_sum || 0)
+    group.work_score_sum += Number(item.mean_score || 0)
     group.negative_count += counts.negative
     group.neutral_count += counts.neutral
     group.positive_count += counts.positive
@@ -248,8 +259,12 @@ function isFragmentMetric(metric = renderedChart.value.metric) {
   return String(metric || "").startsWith("fragment_")
 }
 
-function isPercentageMetric(metric = renderedChart.value.metric) {
-  return String(metric || "").includes("_percentage_")
+function isScoreMetric(metric = renderedChart.value.metric) {
+  return metric === "fragment_mean_score" || metric === "work_mean_score"
+}
+
+function isWorkScoreMetric(metric = renderedChart.value.metric) {
+  return metric === "work_mean_score"
 }
 
 function fieldLabel(field) {
@@ -366,6 +381,8 @@ function clearChartGroupFocus() {
 }
 
 function parseChartSentiment(seriesName) {
+  if (isScoreMetric()) return ""
+
   const name = String(seriesName || "")
 
   if (name.startsWith("Негативные")) return "-1"
@@ -408,7 +425,9 @@ function compareChartLabels(first, second) {
   return compareLabels(first.label, second.label)
 }
 
-function buildBaseChartOption() {
+function buildBaseChartOption(hideLegend = false) {
+  const hasDataZoom = distributionChartGroups.value.length > 12
+
   return {
     color: ["#ef4444", "#94a3b8", "#10b981"],
     tooltip: {
@@ -418,20 +437,21 @@ function buildBaseChartOption() {
       },
     },
     legend: {
+      show: !hideLegend,
       top: 0,
     },
     grid: {
       left: 48,
       right: 24,
-      top: 56,
-      bottom: distributionChartGroups.value.length > 8 ? 96 : 56,
+      top: hideLegend ? 32 : 56,
+      bottom: chartGridBottom(),
       containLabel: true,
     },
-    dataZoom: distributionChartGroups.value.length > 12
+    dataZoom: hasDataZoom
       ? [
           {
             type: "slider",
-            bottom: 24,
+            bottom: 16,
             height: 22,
             labelFormatter: () => "",
           },
@@ -445,78 +465,115 @@ function buildBaseChartOption() {
 
 function buildDistributionChartOption() {
   const labels = distributionChartGroups.value.map((group) => group.label)
-  const isAreaChart = renderedChart.value.type === "area"
+  const scoreMetric = isScoreMetric()
+  const isAreaChart = !scoreMetric && renderedChart.value.type === "area"
   const seriesType = isAreaChart ? "line" : "bar"
-  const stack = renderedChart.value.type === "stacked_bar" ? "sentiment" : undefined
+  const stack = !scoreMetric && renderedChart.value.type === "stacked_bar" ? "sentiment" : undefined
   const subjectLabel = isFragmentMetric() ? "фрагменты" : "документы"
-  const yAxisName = isPercentageMetric() ? "Проценты" : (isFragmentMetric() ? "Фрагменты" : "Документы")
+  const scoreMetricName = isWorkScoreMetric() ? "Средняя оценка документов" : "Средняя оценка фрагментов"
+  const yAxisName = scoreMetric ? "Оценка" : (isFragmentMetric() ? "Фрагменты" : "Документы")
 
   return {
-    ...buildBaseChartOption(),
+    ...buildBaseChartOption(scoreMetric),
     tooltip: {
       trigger: "axis",
       valueFormatter: (value) => {
-        return isPercentageMetric() ? `${Number(value || 0).toFixed(1)}%` : value
+        return scoreMetric ? Number(value || 0).toFixed(2) : value
       },
     },
     xAxis: {
       type: "category",
-      name: renderedXAxisLabel.value,
       data: labels,
       axisLabel: chartAxisLabelOptions(labels),
     },
     yAxis: {
       type: "value",
       name: yAxisName,
-      minInterval: isPercentageMetric() ? undefined : 1,
-      max: isPercentageMetric() ? 100 : undefined,
-      axisLabel: isPercentageMetric()
+      min: scoreMetric ? -1 : undefined,
+      max: scoreMetric ? 1 : undefined,
+      minInterval: scoreMetric ? undefined : 1,
+      axisLabel: scoreMetric
         ? {
-            formatter: "{value}%",
+            formatter: (value) => Number(value || 0).toFixed(1),
           }
         : undefined,
     },
-    series: [
-      {
-        name: `Негативные ${subjectLabel}`,
-        type: seriesType,
-        stack,
-        smooth: isAreaChart,
-        areaStyle: isAreaChart ? {} : undefined,
-        data: distributionChartGroups.value.map((group) => getChartGroupValue(group, "negative_count")),
-      },
-      {
-        name: `Нейтральные ${subjectLabel}`,
-        type: seriesType,
-        stack,
-        smooth: isAreaChart,
-        areaStyle: isAreaChart ? {} : undefined,
-        data: distributionChartGroups.value.map((group) => getChartGroupValue(group, "neutral_count")),
-      },
-      {
-        name: `Позитивные ${subjectLabel}`,
-        type: seriesType,
-        stack,
-        smooth: isAreaChart,
-        areaStyle: isAreaChart ? {} : undefined,
-        data: distributionChartGroups.value.map((group) => getChartGroupValue(group, "positive_count")),
-      },
-    ],
+    series: scoreMetric
+      ? [
+          {
+            name: scoreMetricName,
+            type: seriesType,
+            smooth: isAreaChart,
+            areaStyle: isAreaChart ? {} : undefined,
+            data: distributionChartGroups.value.map((group) => ({
+              value: getChartGroupMeanScore(group),
+              itemStyle: {
+                color: scoreColor(getChartGroupMeanScore(group)),
+              },
+            })),
+          },
+        ]
+      : [
+          {
+            name: `Негативные ${subjectLabel}`,
+            type: seriesType,
+            stack,
+            smooth: isAreaChart,
+            areaStyle: isAreaChart ? {} : undefined,
+            data: distributionChartGroups.value.map((group) => getChartGroupValue(group, "negative_count")),
+          },
+          {
+            name: `Нейтральные ${subjectLabel}`,
+            type: seriesType,
+            stack,
+            smooth: isAreaChart,
+            areaStyle: isAreaChart ? {} : undefined,
+            data: distributionChartGroups.value.map((group) => getChartGroupValue(group, "neutral_count")),
+          },
+          {
+            name: `Позитивные ${subjectLabel}`,
+            type: seriesType,
+            stack,
+            smooth: isAreaChart,
+            areaStyle: isAreaChart ? {} : undefined,
+            data: distributionChartGroups.value.map((group) => getChartGroupValue(group, "positive_count")),
+          },
+        ],
   }
 }
 
 function getChartGroupValue(group, key) {
-  const value = Number(group[key] || 0)
+  return Number(group[key] || 0)
+}
 
-  if (!isPercentageMetric()) return value
+function getChartGroupMeanScore(group) {
+  if (isWorkScoreMetric()) {
+    const worksCount = Number(group.works_count || 0)
 
-  const total = Number(group.negative_count || 0)
-    + Number(group.neutral_count || 0)
-    + Number(group.positive_count || 0)
+    if (!worksCount) return 0
 
-  if (!total) return 0
+    return Number((Number(group.work_score_sum || 0) / worksCount).toFixed(2))
+  }
 
-  return Number(((value / total) * 100).toFixed(1))
+  const segmentsCount = Number(group.segments_count || 0)
+
+  if (!segmentsCount) return 0
+
+  return Number((Number(group.score_sum || 0) / segmentsCount).toFixed(2))
+}
+
+function scoreColor(score) {
+  if (score < -0.15) return "#ef4444"
+  if (score > 0.15) return "#10b981"
+
+  return "#64748b"
+}
+
+function chartGridBottom() {
+  if (distributionChartGroups.value.length > 12) return 64
+  if (distributionChartGroups.value.length > 8) return 64
+
+  return 64
 }
 
 function chartAxisLabelOptions(labels) {
@@ -840,7 +897,7 @@ onUnmounted(() => {
       </div>
 
       <div v-else-if="loading" class="rounded-2xl bg-white p-5 text-slate-500 shadow-sm ring-1 ring-slate-200">
-        Загружаю результаты...
+        Загрузка результатов...
       </div>
 
       <template v-else-if="run">
@@ -986,7 +1043,8 @@ onUnmounted(() => {
                 </label>
                 <select
                   v-model="selectedChartType"
-                  class="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-slate-900 outline-none focus:border-slate-500"
+                  :disabled="isSelectedScoreMetric"
+                  class="w-full rounded-xl border border-slate-300 bg-white px-4 py-2 text-slate-900 outline-none focus:border-slate-500 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-500"
                 >
                   <option
                     v-for="typeOption in chartTypeOptions"
@@ -1004,12 +1062,12 @@ onUnmounted(() => {
             >
               <div class="border-b border-slate-200 bg-slate-50 px-4 py-3">
                 <p class="font-semibold text-slate-900">
-                  X: {{ renderedXAxisLabel }} · Y: {{ renderedMetricLabel }} · {{ renderedChartTypeLabel }}
+                  X: {{ renderedXAxisLabel }} - Y: {{ renderedMetricLabel }} - {{ renderedChartTypeLabel }}
                 </p>
               </div>
 
               <div v-if="selectedFilteredWorksCount === 0" class="p-5 text-slate-500">
-                Для выбранных условий нет выбранных работ.
+                Нет выбранных работ.
               </div>
 
               <div v-else class="p-5">
@@ -1031,9 +1089,9 @@ onUnmounted(() => {
               <p v-if="focusedChartGroupLabel" class="mt-1 text-sm text-slate-600">
                 Показана группа: {{ focusedChartGroupLabel }}
                 <template v-if="focusedChartSentimentLabel">
-                  · тональность: {{ sentimentMeta(focusedChartSentimentLabel).label.toLowerCase() }}
+                  - тональность: {{ sentimentMeta(focusedChartSentimentLabel).label.toLowerCase() }}
                 </template>
-                · документов: {{ visibleSummary.length }}
+                - документов: {{ visibleSummary.length }}
               </p>
             </div>
 
@@ -1051,7 +1109,7 @@ onUnmounted(() => {
             <table class="w-full border-collapse text-left">
               <thead class="bg-slate-100 text-sm text-slate-700">
                 <tr>
-                  <th class="w-12 px-5 py-3 font-semibold">
+                  <th v-if="!chartFocusActive" class="w-12 px-5 py-3 font-semibold">
                     <input
                       type="checkbox"
                       :checked="allFilteredSelected"
@@ -1077,7 +1135,7 @@ onUnmounted(() => {
                   :key="item.original_work_id"
                 >
                   <tr class="hover:bg-slate-50">
-                    <td class="px-5 py-3 align-top">
+                    <td v-if="!chartFocusActive" class="px-5 py-3 align-top">
                       <input
                         type="checkbox"
                         :checked="selectedWorkIds.has(item.original_work_id)"
@@ -1110,7 +1168,7 @@ onUnmounted(() => {
                         {{ item.title || "Без названия" }}
                       </span>
                       <p class="mt-1 text-sm text-slate-500">
-                        {{ item.author || "Автор не указан" }} · {{ item.date || "Дата не указана" }}
+                        {{ item.author || "Автор не указан" }} - {{ item.date || "Дата не указана" }}
                       </p>
                     </td>
                     <td class="px-5 py-3 font-semibold" :class="scoreClass(item.mean_score)">
@@ -1126,7 +1184,7 @@ onUnmounted(() => {
                   </tr>
 
                   <tr v-if="isWorkExpanded(item.original_work_id)" class="bg-slate-50/70">
-                    <td colspan="9" class="px-5 py-4">
+                    <td :colspan="resultsTableColspan" class="px-5 py-4">
                       <p
                         v-if="fragmentLoadingByWorkId[item.original_work_id]"
                         class="text-sm text-slate-500"
@@ -1195,7 +1253,7 @@ onUnmounted(() => {
                 </template>
 
                 <tr v-if="visibleSummary.length === 0">
-                  <td colspan="9" class="px-5 py-8 text-center text-slate-500">
+                  <td :colspan="resultsTableColspan" class="px-5 py-8 text-center text-slate-500">
                     По фильтрам конструктора ничего не найдено.
                   </td>
                 </tr>

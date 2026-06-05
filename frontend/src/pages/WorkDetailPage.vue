@@ -485,7 +485,7 @@ onBeforeUnmount(() => {
               >
                 Страницы: {{ work.pages }}
                 <span v-if="firstCorrectedPdfPage && firstCorrectedPdfPage !== firstPdfPage">
-                  · PDF: {{ firstCorrectedPdfPage }}
+                  - PDF: {{ firstCorrectedPdfPage }}
                 </span>
               </p>
             </div>

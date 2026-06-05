@@ -207,7 +207,7 @@ onMounted(() => {
                 {{ work.title || "Без названия" }}
               </RouterLink>
               <p class="mt-1 text-sm text-slate-500">
-                {{ work.author || "Автор не указан" }} · {{ work.genre || "Жанр не указан" }}
+                {{ work.author || "Автор не указан" }} - {{ work.genre || "Жанр не указан" }}
               </p>
             </li>
           </ul>
