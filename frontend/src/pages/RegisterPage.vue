@@ -49,23 +49,23 @@ onMounted(async () => {
         <div class="space-y-4">
           <div>
             <label class="mb-1 block text-sm font-medium text-slate-700">
-              Логин
-            </label>
-            <input
-              v-model="username"
-              autocomplete="username"
-              class="w-full rounded-xl border border-slate-300 px-4 py-2 text-slate-900 outline-none focus:border-slate-500"
-            />
-          </div>
-
-          <div>
-            <label class="mb-1 block text-sm font-medium text-slate-700">
               Почта
             </label>
             <input
               v-model="email"
               type="email"
               autocomplete="email"
+              class="w-full rounded-xl border border-slate-300 px-4 py-2 text-slate-900 outline-none focus:border-slate-500"
+            />
+          </div>
+
+          <div>
+            <label class="mb-1 block text-sm font-medium text-slate-700">
+              Логин
+            </label>
+            <input
+              v-model="username"
+              autocomplete="username"
               class="w-full rounded-xl border border-slate-300 px-4 py-2 text-slate-900 outline-none focus:border-slate-500"
             />
           </div>

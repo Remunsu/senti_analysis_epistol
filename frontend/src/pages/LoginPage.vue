@@ -81,10 +81,6 @@ onMounted(async () => {
           >
             {{ submitting ? "Вхожу..." : "Войти" }}
           </button>
-
-          <RouterLink to="/register" class="text-sm font-medium text-slate-700 hover:underline">
-            Зарегистрироваться
-          </RouterLink>
         </div>
       </form>
     </div>
