@@ -470,9 +470,10 @@ function buildDistributionChartOption() {
     ...buildBaseChartOption(scoreMetric),
     tooltip: {
       trigger: "axis",
-      valueFormatter: (value) => {
-        return scoreMetric ? `${Math.abs(Number(value || 0)).toFixed(1)}%` : value
-      },
+      formatter: scoreMetric ? formatScoreTooltip : undefined,
+      valueFormatter: scoreMetric
+        ? undefined
+        : (value) => value,
     },
     xAxis: {
       type: "category",
@@ -484,12 +485,22 @@ function buildDistributionChartOption() {
       name: yAxisName,
       min: scoreMetric ? -100 : undefined,
       max: scoreMetric ? 100 : undefined,
+      interval: scoreMetric ? 20 : undefined,
       minInterval: scoreMetric ? undefined : 1,
       axisLabel: scoreMetric
         ? {
             formatter: (value) => `${Math.abs(Number(value || 0))}%`,
           }
-        : undefined,
+        : {
+            show: true,
+            formatter: (value) => Number(value || 0).toLocaleString("ru-RU"),
+          },
+      axisTick: {
+        show: true,
+      },
+      axisLine: {
+        show: true,
+      },
     },
     series: scoreMetric
       ? [
@@ -555,6 +566,34 @@ function getChartGroupPercent(group, key) {
   if (!total) return 0
 
   return Number(((Number(group[key] || 0) / total) * 100).toFixed(1))
+}
+
+function formatScoreTooltip(params) {
+  const firstParam = Array.isArray(params) ? params[0] : params
+  const groupLabel = firstParam?.axisValueLabel || firstParam?.name || ""
+  const group = distributionChartGroups.value.find((item) => item.label === groupLabel)
+
+  if (!group) return groupLabel
+
+  const negative = getChartGroupPercent(group, "negative_count")
+  const neutral = getChartGroupPercent(group, "neutral_count")
+  const positive = getChartGroupPercent(group, "positive_count")
+
+  return [
+    `<strong>${escapeHtml(groupLabel)}</strong>`,
+    `<span style="color:#ef4444">●</span> Негативные: ${negative.toFixed(1)}%`,
+    `<span style="color:#64748b">●</span> Нейтральные: ${neutral.toFixed(1)}%`,
+    `<span style="color:#10b981">●</span> Позитивные: ${positive.toFixed(1)}%`,
+  ].join("<br/>")
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;")
 }
 
 function chartGridBottom() {
