@@ -131,8 +131,6 @@ const distributionChartGroups = computed(() => {
       label,
       works_count: 0,
       segments_count: 0,
-      score_sum: 0,
-      work_score_sum: 0,
       negative_count: 0,
       neutral_count: 0,
       positive_count: 0,
@@ -140,8 +138,6 @@ const distributionChartGroups = computed(() => {
 
     group.works_count += 1
     group.segments_count += Number(item.segments_count || 0)
-    group.score_sum += Number(item.score_sum || 0)
-    group.work_score_sum += Number(item.mean_score || 0)
     group.negative_count += counts.negative
     group.neutral_count += counts.neutral
     group.positive_count += counts.positive
@@ -381,8 +377,6 @@ function clearChartGroupFocus() {
 }
 
 function parseChartSentiment(seriesName) {
-  if (isScoreMetric()) return ""
-
   const name = String(seriesName || "")
 
   if (name.startsWith("Негативные")) return "-1"
@@ -470,15 +464,14 @@ function buildDistributionChartOption() {
   const seriesType = isAreaChart ? "line" : "bar"
   const stack = !scoreMetric && renderedChart.value.type === "stacked_bar" ? "sentiment" : undefined
   const subjectLabel = isFragmentMetric() ? "фрагменты" : "документы"
-  const scoreMetricName = isWorkScoreMetric() ? "Средняя оценка документов" : "Средняя оценка фрагментов"
-  const yAxisName = scoreMetric ? "Оценка" : (isFragmentMetric() ? "Фрагменты" : "Документы")
+  const yAxisName = scoreMetric ? "Проценты" : (isFragmentMetric() ? "Фрагменты" : "Документы")
 
   return {
     ...buildBaseChartOption(scoreMetric),
     tooltip: {
       trigger: "axis",
       valueFormatter: (value) => {
-        return scoreMetric ? Number(value || 0).toFixed(2) : value
+        return scoreMetric ? `${Math.abs(Number(value || 0)).toFixed(1)}%` : value
       },
     },
     xAxis: {
@@ -489,28 +482,36 @@ function buildDistributionChartOption() {
     yAxis: {
       type: "value",
       name: yAxisName,
-      min: scoreMetric ? -1 : undefined,
-      max: scoreMetric ? 1 : undefined,
+      min: scoreMetric ? -100 : undefined,
+      max: scoreMetric ? 100 : undefined,
       minInterval: scoreMetric ? undefined : 1,
       axisLabel: scoreMetric
         ? {
-            formatter: (value) => Number(value || 0).toFixed(1),
+            formatter: (value) => `${Math.abs(Number(value || 0))}%`,
           }
         : undefined,
     },
     series: scoreMetric
       ? [
           {
-            name: scoreMetricName,
-            type: seriesType,
-            smooth: isAreaChart,
-            areaStyle: isAreaChart ? {} : undefined,
-            data: distributionChartGroups.value.map((group) => ({
-              value: getChartGroupMeanScore(group),
-              itemStyle: {
-                color: scoreColor(getChartGroupMeanScore(group)),
-              },
-            })),
+            name: `Негативные ${subjectLabel}`,
+            type: "bar",
+            stack: "score",
+            barWidth: "52%",
+            itemStyle: {
+              color: "#ef4444",
+            },
+            data: distributionChartGroups.value.map((group) => -getChartGroupPercent(group, "negative_count")),
+          },
+          {
+            name: `Позитивные ${subjectLabel}`,
+            type: "bar",
+            stack: "score",
+            barWidth: "52%",
+            itemStyle: {
+              color: "#10b981",
+            },
+            data: distributionChartGroups.value.map((group) => getChartGroupPercent(group, "positive_count")),
           },
         ]
       : [
@@ -546,27 +547,14 @@ function getChartGroupValue(group, key) {
   return Number(group[key] || 0)
 }
 
-function getChartGroupMeanScore(group) {
-  if (isWorkScoreMetric()) {
-    const worksCount = Number(group.works_count || 0)
+function getChartGroupPercent(group, key) {
+  const total = isWorkScoreMetric()
+    ? Number(group.works_count || 0)
+    : Number(group.segments_count || 0)
 
-    if (!worksCount) return 0
+  if (!total) return 0
 
-    return Number((Number(group.work_score_sum || 0) / worksCount).toFixed(2))
-  }
-
-  const segmentsCount = Number(group.segments_count || 0)
-
-  if (!segmentsCount) return 0
-
-  return Number((Number(group.score_sum || 0) / segmentsCount).toFixed(2))
-}
-
-function scoreColor(score) {
-  if (score < -0.15) return "#ef4444"
-  if (score > 0.15) return "#10b981"
-
-  return "#64748b"
+  return Number(((Number(group[key] || 0) / total) * 100).toFixed(1))
 }
 
 function chartGridBottom() {
